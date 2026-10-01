@@ -164,6 +164,7 @@
     if (view === "dashboard") renderOverview();
     if (view === "users") renderUsers();
     if (view === "notices") renderNotices();
+    if (view === "models") renderModels();
   }
 
   /* ---------------- dashboard ---------------- */
@@ -461,6 +462,46 @@
     }
   }
 
+  /* ---------------- models ---------------- */
+
+  async function renderModels() {
+    var body = $("#models-body");
+    try {
+      var m = await api("/admin/models");
+      var ready = m.items.filter(function (i) { return i.available; }).length;
+      $("#models-callout").innerHTML =
+        "<b>Default:</b> " + esc(m.default) +
+        ' <span class="muted">· ' + ready + "/" + m.items.length +
+        " weight sets present · " + esc(m.weights_dir) + "</span>";
+      if (!m.items.length) {
+        body.innerHTML = '<tr><td colspan="6" class="muted">No models configured.</td></tr>';
+      } else {
+        body.innerHTML = m.items.map(function (it) {
+          return "<tr><td>" + esc(it.name) + "</td>" +
+            "<td>" + (it.available ? "✓ ready" : "✗ missing") + "</td>" +
+            "<td>" + esc(it.size_mb) + " MB</td>" +
+            "<td>" + esc(fmtDate(it.modified_at) || "—") + "</td>" +
+            "<td>" + (it.accuracy == null ? "—" : esc(it.accuracy)) + "</td>" +
+            "<td>" + (it.f1_macro == null ? "—" : esc(it.f1_macro)) + "</td></tr>";
+        }).join("");
+      }
+      var t = m.train_config || {};
+      $("#models-train").textContent =
+        "Trained " + (fmtDate(t.trained_at) || "—") +
+        " · epochs " + t.epochs + " · batch " + t.batch +
+        " · img " + t.img + " · seed " + t.seed;
+      $("#models-classes").innerHTML = (m.classes || []).length
+        ? m.classes.map(function (c) {
+            return '<span class="cat cat-update">' + esc(c) + "</span>";
+          }).join("")
+        : '<p class="muted">No labels loaded.</p>';
+      $("#models-extra").textContent = JSON.stringify(
+        { ensemble: m.ensemble || {}, thresholds: m.thresholds || {} }, null, 2);
+    } catch (err) {
+      body.innerHTML = '<tr><td colspan="6" class="muted">' + esc(err.message) + "</td></tr>";
+    }
+  }
+
   /* ---------------- wiring ---------------- */
 
   function boot() {
@@ -472,6 +513,7 @@
     });
 
     $("#refresh-stats").addEventListener("click", renderOverview);
+    $("#models-refresh").addEventListener("click", renderModels);
     $("#recent-users").addEventListener("click", function (e) {
       var btn = e.target.closest("[data-user]");
       if (btn && typeof openUserDetail === "function") openUserDetail(Number(btn.dataset.user));
