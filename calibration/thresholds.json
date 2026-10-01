@@ -1,0 +1,9 @@
+{
+  "entropy_max": 0.85,
+  "entropy_type": "normalized (H / log(n_classes); backend/app.py norm_entropy)",
+  "entropy_hmax_note": "4-class Hmax = log(4); 0.85 is on the normalized 0-1 scale, not raw nats",
+  "prob_min": 0.55,
+  "source": "validation set only (frozen; never tuned on test)",
+  "status": "heuristic-carryover pending val refit in P0-4",
+  "next": "run scripts/calibrate.py on val probas to fit temperature T + threshold, then lock"
+}

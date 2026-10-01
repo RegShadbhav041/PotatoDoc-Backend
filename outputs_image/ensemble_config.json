@@ -1,0 +1,8 @@
+{
+ "members": [
+  "small_cnn",
+  "mobilenetv2",
+  "efficientnetb0"
+ ],
+ "rule": "soft_vote_mean"
+}

@@ -1,0 +1,14 @@
+{
+ "csv": [
+  "early_blight",
+  "late_blight",
+  "healthy",
+  "non_leaf"
+ ],
+ "api": [
+  "Early Blight",
+  "Late Blight",
+  "Healthy",
+  "Non-Leaf"
+ ]
+}
