@@ -13,7 +13,7 @@ so it can be versioned and deployed independently.
 | `/ping` | GET | `Hello, I am alive` (text) |
 | `/models` | GET | `{models, modelNames, default}` |
 | `/predict?model_id=<id>` | POST (multipart `file`) | classification JSON (`class`, `confidence`, `probabilities`, gates → `Unknown`) |
-| `/gradcam?model_id=<id>` | POST (multipart `file`) | `{overlay}` or `{heatmaps:{id:{overlay}}}` |
+| `/gradcam?model_id=<id>` | POST (multipart `file`) | `{overlay, model:"small_cnn"}` — SmallCNN heatmap only, for every `model_id` |
 
 `model_id`: `ensemble` (default) | `small_cnn` | `mobilenetv2` | `efficientnetb0` | `convnext_plantvillage` (legacy alias).
 

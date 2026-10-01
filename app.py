@@ -5,7 +5,7 @@ Contract (must not break mobile):
   GET  /models -> {models:[ids], modelNames:{id:label}, default:id}
   POST /predict?model_id=<id> (multipart file) -> success {class, confidence, probabilities, is_unknown:false, individual?}
                                                      unknown {class:"Unknown", confidence, is_unknown:true, entropy, probabilities:{}, message}
-  POST /gradcam?model_id=<id> (multipart file) -> single {overlay: data-uri} | ensemble {heatmaps:{id:{overlay}}}
+  POST /gradcam?model_id=<id> (multipart file) -> {overlay: data-uri, model:"small_cnn"} (SmallCNN only for every model_id)
 Limits: JPEG/PNG/WebP, 10MB. Class strings EXACT: Early Blight | Late Blight | Healthy | Unknown
 Model IDs: small_cnn (M1) | mobilenetv2 (M2) | efficientnetb0 (M3) | ensemble
   + legacy alias convnext_plantvillage -> efficientnetb0 (old mobile fallback still works).
@@ -210,12 +210,13 @@ async def predict(file: UploadFile = File(...), model_id: str = Query("ensemble"
 @app.post("/gradcam")
 async def gradcam(file: UploadFile = File(...), model_id: str = Query("ensemble")):
     mid = resolve(model_id)
+    if mid != "ensemble" and mid not in MEMBERS:
+        raise HTTPException(400, f"Unknown model_id '{model_id}'.")
     img = read_image(await file.read())
     try:
-        if mid == "ensemble":
-            return {"heatmaps": {m: {"overlay": gradcam_overlay(m, img)} for m in MEMBERS}}
-        if mid in MEMBERS:
-            return {"overlay": gradcam_overlay(mid, img)}
+        # Product decision 2026-10-01: always return the SmallCNN heatmap only.
+        # MobileNetV2/EfficientNetB0 overlays are no longer displayed; single
+        # {overlay} shape is what the app renders for every model_id.
+        return {"overlay": gradcam_overlay("small_cnn", img), "model": "small_cnn"}
     except FileNotFoundError as e:
         raise HTTPException(503, str(e))
-    raise HTTPException(400, f"Unknown model_id '{model_id}'.")
