@@ -35,7 +35,7 @@ from history import router as history_router
 # Repo root = this file's directory; override with POTATO_BASE_DIR if relocated.
 BASE = Path(os.environ.get("POTATO_BASE_DIR", Path(__file__).resolve().parent))
 # Switch weights dir without code change: POTATO_WEIGHTS_DIR=<dir> (restart server).
-OUT = Path(os.environ.get("POTATO_WEIGHTS_DIR", str(BASE / "outputs_image")))
+OUT = Path(os.environ.get("POTATO_WEIGHTS_DIR", str(BASE / "outputs_combined")))
 CSV2API = {"early_blight": "Early Blight", "late_blight": "Late Blight",
            "healthy": "Healthy", "non_leaf": "Non-Leaf"}
 def _load_classes():

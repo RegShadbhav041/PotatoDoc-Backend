@@ -1,6 +1,6 @@
 """SmallCNN (M1) architecture — vendored verbatim from train_image_pv.py:69-82.
 
-The backend only needs the architecture class to load outputs_image/small_cnn/best.pt.
+The backend only needs the architecture class to load outputs_combined/small_cnn/best.pt.
 Importing the full trainer would pull in pandas/scikit-learn and its hardcoded D:/Potato
 paths, none of which are needed at serving time. Parameter names (f, fc) must stay
 identical so the checkpoint's state dict loads without key mismatches.

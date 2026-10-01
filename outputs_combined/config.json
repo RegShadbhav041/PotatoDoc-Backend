@@ -20,5 +20,9 @@
   "Healthy",
   "Non-Leaf"
  ],
- "time": "2026-09-25 07:50"
+ "train_csv": "combined_train.csv",
+ "val_csv": "combined_val.csv",
+ "test_csv": "PlantVillage_test.csv",
+ "out_dir": "outputs_combined",
+ "time": "2026-09-27 08:19"
 }
