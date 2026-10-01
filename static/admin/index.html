@@ -108,6 +108,8 @@
         <div class="panel">
           <div class="panel-head">
             <h2>Farmer accounts</h2>
+            <input id="users-search" class="search" type="search"
+                   placeholder="Search name or contact…" autocomplete="off">
             <button class="btn btn-outline btn-sm" id="users-refresh">Refresh</button>
           </div>
           <div class="table-wrap">
@@ -117,11 +119,48 @@
                   <th>Name</th>
                   <th>Contact</th>
                   <th>Role</th>
+                  <th>Diagnoses</th>
+                  <th>Last diagnosis</th>
                   <th>Joined</th>
                   <th class="right">Actions</th>
                 </tr>
               </thead>
               <tbody id="users-body">
+                <tr><td colspan="7" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---- User detail ---- -->
+      <section id="view-user-detail" class="view hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="ud-name">Farmer</h2>
+            <button class="btn btn-outline btn-sm" id="ud-back">← Back to farmers</button>
+          </div>
+          <p id="ud-meta" class="muted"></p>
+          <div id="ud-cards" class="stats"></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Class mix</h2></div>
+            <div id="ud-class-bars" class="bars"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Models used</h2></div>
+            <div id="ud-model-bars" class="bars"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Diagnoses</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Class</th><th>Confidence</th><th>Model</th><th>Unknown</th><th>When</th></tr>
+              </thead>
+              <tbody id="ud-history-body">
                 <tr><td colspan="5" class="muted">Loading…</td></tr>
               </tbody>
             </table>

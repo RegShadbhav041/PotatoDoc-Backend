@@ -14,6 +14,8 @@
     view: "dashboard",
     status: "", // notice filter
     editingId: null, // notice being edited
+    search: "", // users filter (client side)
+    userDetailId: null,
   };
 
   var $ = function (sel) { return document.querySelector(sel); };
@@ -142,7 +144,13 @@
 
   /* ---------------- navigation ---------------- */
 
-  var TITLES = { dashboard: "Dashboard", users: "Users", notices: "Notices" };
+  var TITLES = {
+    dashboard: "Dashboard",
+    users: "Users",
+    notices: "Notices",
+    models: "Models",
+    "user-detail": "Farmer detail",
+  };
 
   function navigate(view) {
     state.view = view;
@@ -241,18 +249,31 @@
     var body = $("#users-body");
     try {
       var data = await api("/admin/users");
-      if (!data.items.length) {
-        body.innerHTML = '<tr><td colspan="5" class="muted">No accounts yet.</td></tr>';
+      var q = state.search.trim().toLowerCase();
+      var items = data.items;
+      if (q) {
+        items = items.filter(function (u) {
+          return String(u.name || "").toLowerCase().indexOf(q) !== -1 ||
+            String(u.contact || "").toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      if (!items.length) {
+        body.innerHTML = '<tr><td colspan="7" class="muted">' +
+          (q ? "No farmers match “" + esc(state.search) + "”." : "No accounts yet.") +
+          "</td></tr>";
         return;
       }
-      body.innerHTML = data.items.map(function (u) {
+      body.innerHTML = items.map(function (u) {
         var isSelf = state.user && u.id === state.user.id;
         var next = u.role === "superadmin" ? "user" : "superadmin";
         var label = u.role === "superadmin" ? "Make farmer" : "Make superadmin";
         return "<tr>" +
-          "<td>" + esc(u.name) + (isSelf ? ' <span class="muted">(you)</span>' : "") + "</td>" +
+          '<td><button class="linklike" data-user="' + u.id + '">' + esc(u.name) + "</button>" +
+          (isSelf ? ' <span class="muted">(you)</span>' : "") + "</td>" +
           "<td>" + esc(u.contact) + "</td>" +
           '<td><span class="badge badge-' + esc(u.role) + '">' + esc(u.role) + "</span></td>" +
+          "<td>" + esc(u.history_count) + "</td>" +
+          "<td>" + esc(fmtDate(u.last_diagnosis_at) || "—") + "</td>" +
           "<td>" + esc(fmtDate(u.created_at)) + "</td>" +
           '<td class="right"><div class="row-actions">' +
           '<button class="btn btn-outline btn-sm" data-role-id="' + u.id +
@@ -260,7 +281,7 @@
           "</div></td></tr>";
       }).join("");
     } catch (err) {
-      body.innerHTML = '<tr><td colspan="5" class="muted">' + esc(err.message) + "</td></tr>";
+      body.innerHTML = '<tr><td colspan="7" class="muted">' + esc(err.message) + "</td></tr>";
     }
   }
 
@@ -271,6 +292,59 @@
       renderUsers();
     } catch (err) {
       toast(err.message, true);
+    }
+  }
+
+  /* ---------------- user detail (drill-down) ---------------- */
+
+  async function openUserDetail(userId) {
+    state.userDetailId = userId;
+    navigate("user-detail");
+    $("#ud-history-body").innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+    try {
+      var u = await api("/admin/users/" + userId);
+      $("#ud-name").textContent = u.name || u.contact;
+      $("#ud-meta").innerHTML = esc(u.contact) + " · " +
+        '<span class="badge badge-' + esc(u.role) + '">' + esc(u.role) + "</span>" +
+        " · joined " + esc(fmtDate(u.created_at));
+      $("#ud-cards").innerHTML = [
+        ["Diagnoses", u.history_count],
+        ["Sessions", u.session_count],
+        ["Notices read", u.notices_read],
+        ["Last session", fmtDate(u.last_session_at) || "—"],
+        ["Last diagnosis", fmtDate(u.last_diagnosis_at) || "—"],
+      ].map(function (c) {
+        return '<div class="stat"><div class="stat-value">' + esc(c[1]) +
+          '</div><div class="stat-label">' + esc(c[0]) + "</div></div>";
+      }).join("");
+      renderBars($("#ud-class-bars"), u.class_distribution);
+      renderBars($("#ud-model-bars"), u.model_usage);
+    } catch (err) {
+      toast(err.message, true);
+      navigate("users");
+      return;
+    }
+    try {
+      var h = await api("/admin/users/" + userId + "/history");
+      var body = $("#ud-history-body");
+      if (!h.items.length) {
+        body.innerHTML = '<tr><td colspan="5" class="muted">No diagnoses yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = h.items.map(function (it) {
+        var conf = "—";
+        if (it.confidence != null) {
+          var pct = it.confidence <= 1 ? it.confidence * 100 : it.confidence;
+          conf = Math.round(pct) + "%";
+        }
+        return "<tr><td>" + esc(it.class || "—") + "</td><td>" + esc(conf) +
+          "</td><td>" + esc(it.model || "—") + "</td><td>" +
+          (it.is_unknown ? "yes" : "no") + "</td><td>" +
+          esc(fmtDate(it.timestamp || it.created_at)) + "</td></tr>";
+      }).join("");
+    } catch (err) {
+      $("#ud-history-body").innerHTML =
+        '<tr><td colspan="5" class="muted">' + esc(err.message) + "</td></tr>";
     }
   }
 
@@ -417,7 +491,15 @@
       });
     });
 
+    $("#users-search").addEventListener("input", function (e) {
+      state.search = e.target.value;
+      renderUsers();
+    });
+    $("#ud-back").addEventListener("click", function () { navigate("users"); });
+
     $("#users-body").addEventListener("click", function (e) {
+      var farmer = e.target.closest("[data-user]");
+      if (farmer) { openUserDetail(Number(farmer.dataset.user)); return; }
       var btn = e.target.closest("[data-role-id]");
       if (btn) changeRole(Number(btn.dataset.roleId), btn.dataset.role);
     });
