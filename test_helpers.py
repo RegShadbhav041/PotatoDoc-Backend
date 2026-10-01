@@ -20,8 +20,10 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from auth import router as auth_router
+from history import router as history_router
 
 app = FastAPI()
 app.include_router(auth_router)
+app.include_router(history_router)
 
 client = TestClient(app)
