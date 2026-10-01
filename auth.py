@@ -87,7 +87,7 @@ def _clear_failures(contact):
     _attempt_log.pop(contact, None)
 
 
-def _issue_session(user_id, contact, name):
+def _issue_session(user_id, contact, name, role="user"):
     token = secrets.token_urlsafe(32)
     expires_at = (datetime.now(timezone.utc) + timedelta(days=TOKEN_TTL_DAYS)).isoformat()
     with connect() as conn:
@@ -95,7 +95,7 @@ def _issue_session(user_id, contact, name):
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             (token, user_id, expires_at),
         )
-    return token, {"id": user_id, "contact": contact, "name": name}
+    return token, {"id": user_id, "contact": contact, "name": name, "role": role}
 
 
 @router.post("/register", status_code=201)
@@ -119,7 +119,7 @@ def register(body: RegisterIn):
             raise HTTPException(409, "That contact is already registered.")
         user_id = cur.lastrowid
 
-    token, user = _issue_session(user_id, contact, name)
+    token, user = _issue_session(user_id, contact, name, "user")
     return JSONResponse({"token": token, "user": user}, status_code=201)
 
 
@@ -133,7 +133,7 @@ def login(body: LoginIn):
 
     with connect() as conn:
         row = conn.execute(
-            "SELECT id, contact, display_name, password_hash FROM users WHERE contact = ?",
+            "SELECT id, contact, display_name, role, password_hash FROM users WHERE contact = ?",
             (contact,),
         ).fetchone()
 
@@ -143,33 +143,64 @@ def login(body: LoginIn):
         raise HTTPException(401, "Invalid credentials")
 
     _clear_failures(contact)
-    token, user = _issue_session(row["id"], row["contact"], row["display_name"])
+    token, user = _issue_session(row["id"], row["contact"], row["display_name"], row["role"])
     return {"token": token, "user": user}
 
 
-def require_user(authorization: str = Header(default="")):
-    """FastAPI dependency: resolves a valid bearer token to the farmer."""
+def _resolve_session(authorization):
+    """Shared token lookup. Returns the user dict, or None when the header is
+    missing/malformed/the token is unknown or expired (expired rows are purged).
+    """
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(401, "Not authenticated")
+        return None
     token = token.strip()
 
     with connect() as conn:
         row = conn.execute(
-            "SELECT u.id, u.contact, u.display_name, s.expires_at "
+            "SELECT u.id, u.contact, u.display_name, u.role, s.expires_at "
             "FROM sessions s JOIN users u ON u.id = s.user_id "
             "WHERE s.token = ?",
             (token,),
         ).fetchone()
 
     if row is None:
-        raise HTTPException(401, "Not authenticated")
+        return None
     if row["expires_at"] <= datetime.now(timezone.utc).isoformat():
         with connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
-        raise HTTPException(401, "Not authenticated")
+        return None
 
-    return {"id": row["id"], "contact": row["contact"], "name": row["display_name"]}
+    return {
+        "id": row["id"],
+        "contact": row["contact"],
+        "name": row["display_name"],
+        "role": row["role"],
+    }
+
+
+def require_user(authorization: str = Header(default="")):
+    """FastAPI dependency: resolves a valid bearer token to the farmer."""
+    user = _resolve_session(authorization)
+    if user is None:
+        raise HTTPException(401, "Not authenticated")
+    return user
+
+
+def optional_user(authorization: str = Header(default="")):
+    """Like require_user, but anonymous requests resolve to None instead of 401.
+
+    Used by public endpoints (the notices list) that attach per-user read state
+    only when the caller happens to be signed in.
+    """
+    return _resolve_session(authorization)
+
+
+def require_superadmin(user: dict = Depends(require_user)):
+    """FastAPI dependency: 403 unless the signed-in user is a superadmin."""
+    if user.get("role") != "superadmin":
+        raise HTTPException(403, "Superadmin access required")
+    return user
 
 
 @router.get("/me")

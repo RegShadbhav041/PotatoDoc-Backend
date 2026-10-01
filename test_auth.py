@@ -138,5 +138,59 @@ class SessionTest(unittest.TestCase):
         self.assertNotEqual(login("two@example.com", "x").status_code, 429)
 
 
+class RoleTest(unittest.TestCase):
+    def setUp(self):
+        auth._attempt_log.clear()
+
+    def _with_superadmin_env(self, contact, password, fn):
+        import os
+
+        os.environ["POTATO_SUPERADMIN_CONTACT"] = contact
+        os.environ["POTATO_SUPERADMIN_PASSWORD"] = password
+        try:
+            fn()
+        finally:
+            os.environ.pop("POTATO_SUPERADMIN_CONTACT", None)
+            os.environ.pop("POTATO_SUPERADMIN_PASSWORD", None)
+
+    def test_register_and_login_surface_the_default_role(self):
+        contact = f"role{next(_seq)}-{time.time_ns()}@example.com"
+        body = register(contact).json()
+        self.assertEqual(body["user"]["role"], "user")
+        self.assertEqual(login(contact, "potato1234").json()["user"]["role"], "user")
+
+    def test_me_includes_the_role(self):
+        token = register("role-me@example.com").json()["token"]
+        res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(res.json()["role"], "user")
+
+    def test_env_seed_creates_a_superadmin_and_it_can_log_in(self):
+        import db
+
+        contact = f"seed{time.time_ns()}@example.com"
+        self._with_superadmin_env(
+            contact, "secretpass123", lambda: db._seed_superadmin()
+        )
+        res = login(contact, "secretpass123")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["user"]["role"], "superadmin")
+
+    def test_env_seed_promotes_an_existing_account(self):
+        import db
+
+        contact = f"promote{time.time_ns()}@example.com"
+        register(contact, name="Existing")
+        self._with_superadmin_env(
+            contact, "secretpass123", lambda: db._seed_superadmin()
+        )
+        # Env pair is authoritative: the promoted account now uses the env
+        # password, but its display name is untouched.
+        res = login(contact, "secretpass123")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["user"]["role"], "superadmin")
+        self.assertEqual(res.json()["user"]["name"], "Existing")
+        self.assertEqual(login(contact, "potato1234").status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()
