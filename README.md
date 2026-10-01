@@ -46,7 +46,8 @@ auth.py                register / login / require_user / me / logout (scrypt + o
 db.py                  SQLite schema (users, sessions, history) + connect()
 history.py             GET/PUT/DELETE /history, upsert-only, MAX_ITEMS = 50
 small_cnn.py           SmallCNN class vendored from train_image_pv.py (no pandas/sklearn)
-outputs_image/         3 x best.pt weights (~29 MB) + labels/config/metrics JSON
+outputs_combined/       3 x best.pt weights (~29 MB) + labels/config/metrics JSON
+                        (combined PV + Irish training family: 100% PV test, 98.75% Irish test)
 calibration/           thresholds.json (entropy/probability gates)
 scripts/auth_smoke.sh  end-to-end curl check (register → me → history → logout)
 test_*.py              unit suite (24 tests)
@@ -63,7 +64,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 Env vars:
 - `POTATO_BASE_DIR` — repo root (default: this file's directory)
-- `POTATO_WEIGHTS_DIR` — weights dir (default: `<base>/outputs_image`)
+- `POTATO_WEIGHTS_DIR` — weights dir (default: `<base>/outputs_combined`)
 - `POTATO_DB` — SQLite file (default: `potatodoc.db` next to `db.py`)
 - `POTATO_TOKEN_TTL_DAYS` — session lifetime, default `30`
 
@@ -116,5 +117,5 @@ EXPO_PUBLIC_API_URL=https://<service-url>
 
 ## Updating weights
 
-Copy the new `best.pt` files into `outputs_image/<model>/`, commit, push —
+Copy the new `best.pt` files into `outputs_combined/<model>/`, commit, push —
 Cloud Run rebuilds automatically on your next deploy.
