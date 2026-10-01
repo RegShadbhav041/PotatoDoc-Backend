@@ -145,3 +145,44 @@ def login(body: LoginIn):
     _clear_failures(contact)
     token, user = _issue_session(row["id"], row["contact"], row["display_name"])
     return {"token": token, "user": user}
+
+
+def require_user(authorization: str = Header(default="")):
+    """FastAPI dependency: resolves a valid bearer token to the farmer."""
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(401, "Not authenticated")
+    token = token.strip()
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT u.id, u.contact, u.display_name, s.expires_at "
+            "FROM sessions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.token = ?",
+            (token,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(401, "Not authenticated")
+    if row["expires_at"] <= datetime.now(timezone.utc).isoformat():
+        with connect() as conn:
+            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        raise HTTPException(401, "Not authenticated")
+
+    return {"id": row["id"], "contact": row["contact"], "name": row["display_name"]}
+
+
+@router.get("/me")
+def me(user: dict = Depends(require_user)):
+    return user
+
+
+@router.post("/logout", status_code=204)
+def logout(authorization: str = Header(default="")):
+    """Idempotent by design: signing out must never fail on a dead token."""
+    _, _, token = (authorization or "").partition(" ")
+    token = token.strip()
+    if token:
+        with connect() as conn:
+            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    return Response(status_code=204)

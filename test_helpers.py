@@ -1,7 +1,9 @@
 """Shared TestClient wired to a throwaway database.
 
-Import this FIRST from every test module: db.DB_PATH is read at import time.
-The history router is mounted later, in the history task.
+This module MUST be imported first, before `auth` or `history`: db.DB_PATH is
+captured when db is first imported, so the POTATO_DB override below only takes
+effect if nothing has touched db yet. Importing it also creates the schema, so
+tests never depend on the developer's real potatodoc.db.
 """
 import os
 import tempfile
@@ -9,6 +11,10 @@ import tempfile
 os.environ["POTATO_DB"] = os.path.join(
     tempfile.mkdtemp(prefix="potatodoc-test-"), "test.db"
 )
+
+from db import init_db
+
+init_db()
 
 from fastapi import FastAPI
 from starlette.testclient import TestClient
