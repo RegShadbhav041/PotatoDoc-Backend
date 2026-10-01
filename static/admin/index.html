@@ -52,6 +52,7 @@
         <button class="nav-item active" data-nav="dashboard">Dashboard</button>
         <button class="nav-item" data-nav="users">Users</button>
         <button class="nav-item" data-nav="notices">Notices</button>
+        <button class="nav-item" data-nav="models">Models</button>
       </nav>
 
       <div class="sidebar-foot">
@@ -226,6 +227,41 @@
           </div>
           <div id="notices-list" class="notices-list">
             <p class="muted">Loading…</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---- Models ---- -->
+      <section id="view-models" class="view hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Model inventory</h2>
+            <button class="btn btn-outline btn-sm" id="models-refresh">Refresh</button>
+          </div>
+          <div id="models-callout" class="callout"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Model</th><th>Weights</th><th>Size</th>
+                  <th>Modified</th><th>Accuracy</th><th>F1</th>
+                </tr>
+              </thead>
+              <tbody id="models-body">
+                <tr><td colspan="6" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted" id="models-train"></p>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Classes</h2></div>
+            <div id="models-classes" class="cat-wrap"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Ensemble + calibration</h2></div>
+            <pre id="models-extra" class="code-block"></pre>
           </div>
         </div>
       </section>
