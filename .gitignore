@@ -6,3 +6,6 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+*.db
+*.db-shm
+*.db-wal
