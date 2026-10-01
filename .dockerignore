@@ -1,0 +1,13 @@
+# Keep the build context small and predictable.
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.db
+*.db-shm
+*.db-wal
+.env
+.DS_Store
+README.md
