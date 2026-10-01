@@ -88,7 +88,7 @@
     var u = state.user || {};
     $("#sidebar-user").innerHTML =
       esc(u.name || "Super Admin") + "<small>" + esc(u.contact || "") + "</small>";
-    renderStats();
+    renderOverview();
     renderUsers();
     renderNotices();
   }
@@ -153,7 +153,7 @@
     var target = $("#view-" + view);
     if (target) target.classList.remove("hidden");
     $("#page-title").textContent = TITLES[view] || "Dashboard";
-    if (view === "dashboard") renderStats();
+    if (view === "dashboard") renderOverview();
     if (view === "users") renderUsers();
     if (view === "notices") renderNotices();
   }
@@ -168,18 +168,70 @@
     notices_draft: "Draft notices",
   };
 
-  async function renderStats() {
-    var box = $("#stats");
+  var TREND_LABELS = {
+    new_users_7d: "New farmers (7d)",
+    new_diagnoses_7d: "Diagnoses (7d)",
+    sessions_24h: "Sessions (24h)",
+    diagnoses_24h: "Diagnoses (24h)",
+  };
+
+  /** Horizontal bars from a {label: count} tally; width proportional to max. */
+  function renderBars(el, tally) {
+    var keys = Object.keys(tally || {});
+    if (!keys.length) {
+      el.innerHTML = '<p class="muted">No data yet.</p>';
+      return;
+    }
+    var max = Math.max.apply(null, keys.map(function (k) { return tally[k]; }));
+    el.innerHTML = keys.map(function (k) {
+      var pct = max > 0 ? Math.max(2, Math.round((tally[k] / max) * 100)) : 0;
+      return '<div class="bar-row">' +
+        '<span class="bar-label">' + esc(k) + "</span>" +
+        '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="bar-count">' + esc(tally[k]) + "</span></div>";
+    }).join("");
+  }
+
+  function renderList(el, rowsHtml, emptyHtml) {
+    el.innerHTML = rowsHtml || emptyHtml;
+  }
+
+  async function renderOverview() {
+    var stats = $("#stats");
     try {
-      var s = await api("/admin/stats");
-      box.innerHTML = Object.keys(STAT_LABELS).map(function (key) {
+      var o = await api("/admin/overview");
+      stats.innerHTML = Object.keys(STAT_LABELS).map(function (key) {
         return '<div class="stat"><div class="stat-value">' +
-          esc(s[key]) + '</div><div class="stat-label">' +
+          esc(o.totals[key]) + '</div><div class="stat-label">' +
           esc(STAT_LABELS[key]) + "</div></div>";
       }).join("");
+      $("#trends").innerHTML = Object.keys(TREND_LABELS).map(function (key) {
+        return '<span class="trend"><b>' + esc(o.trends[key]) + "</b> " +
+          esc(TREND_LABELS[key]) + "</span>";
+      }).join("");
+      renderBars($("#class-bars"), o.class_distribution);
+      renderBars($("#model-bars"), o.model_usage);
+      renderList($("#recent-users"),
+        (o.recent_users || []).map(function (u) {
+          return '<button class="list-row" data-user="' + u.id + '">' +
+            "<span><b>" + esc(u.name || u.contact) + "</b>" +
+            '<small class="muted">' + esc(u.contact) + "</small></span>" +
+            '<span class="muted">' + esc(fmtDate(u.created_at)) + "</span></button>";
+        }).join(""),
+        '<p class="muted">No farmers yet.</p>');
+      renderList($("#recent-diagnoses"),
+        (o.recent_diagnoses || []).map(function (d) {
+          var conf = d.confidence == null ? "" :
+            " · " + (d.confidence <= 1 ? Math.round(d.confidence * 100) : Math.round(d.confidence)) + "%";
+          return '<div class="list-row"><span><b>' + esc(d.class || "—") + "</b>" +
+            '<small class="muted">' + esc(d.user || "—") + " · " + esc(d.model || "—") + esc(conf) +
+            "</small></span>" +
+            '<span class="muted">' + esc(fmtDate(d.at)) + "</span></div>";
+        }).join(""),
+        '<p class="muted">No diagnoses yet.</p>');
       $("#stats-updated").textContent = "Updated " + new Date().toLocaleTimeString();
     } catch (err) {
-      box.innerHTML = '<p class="muted">' + esc(err.message) + "</p>";
+      stats.innerHTML = '<p class="muted">' + esc(err.message) + "</p>";
     }
   }
 
@@ -313,7 +365,7 @@
       }
       resetComposer();
       renderNotices();
-      renderStats();
+      renderOverview();
     } catch (err) {
       msg.textContent = err.message;
       msg.classList.add("error");
@@ -329,7 +381,7 @@
       toast("Notice deleted");
       if (state.editingId === id) resetComposer();
       renderNotices();
-      renderStats();
+      renderOverview();
     } catch (err) {
       toast(err.message, true);
     }
@@ -345,7 +397,11 @@
       el.addEventListener("click", function () { navigate(el.dataset.nav); });
     });
 
-    $("#refresh-stats").addEventListener("click", renderStats);
+    $("#refresh-stats").addEventListener("click", renderOverview);
+    $("#recent-users").addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-user]");
+      if (btn && typeof openUserDetail === "function") openUserDetail(Number(btn.dataset.user));
+    });
     $("#users-refresh").addEventListener("click", renderUsers);
     $("#notices-refresh").addEventListener("click", renderNotices);
     $("#notice-form").addEventListener("submit", saveNotice);
