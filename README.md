@@ -38,7 +38,27 @@ Env vars:
 - `POTATO_BASE_DIR` — repo root (default: this file's directory)
 - `POTATO_WEIGHTS_DIR` — weights dir (default: `<base>/outputs_image`)
 
-## Deploy (Google Cloud Run, free tier)
+## Quick start with a public URL (free, no card) — current setup
+
+```powershell
+powershell -ExecutionPolicy Bypass -File start_backend.ps1
+```
+
+Starts uvicorn on `:8000` + a Cloudflare quick tunnel and prints a
+`https://….trycloudflare.com` URL. Paste it into `Potato\mobile\.env`:
+
+```
+EXPO_PUBLIC_API_URL=https://<printed-url>
+```
+
+Requires `cloudflared` (`winget install cloudflare.cloudflared`). Constraints:
+the PC must stay on/awake, and **the URL changes on every restart** (quick
+tunnels are ephemeral — reprint the script output and update `.env`).
+
+## Deploy (Google Cloud Run, free tier — needs a payment card on file)
+
+GCP requires a billing account even for the always-free tier ($0 usage).
+If/when a card is available:
 
 ```bash
 gcloud run deploy potatodoc-backend --source . \
