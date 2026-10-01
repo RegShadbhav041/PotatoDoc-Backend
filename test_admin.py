@@ -48,11 +48,13 @@ class GuardTest(unittest.TestCase):
     def setUp(self):
         auth._attempt_log.clear()
         self.admin, self.admin_id = make_superadmin()
-        self.farmer, _ = sign_up()
+        self.farmer, self.farmer_id = sign_up()
 
     def _admin_routes(self, admin_headers):
         return [
             client.get("/admin/stats", headers=admin_headers),
+            client.get("/admin/overview", headers=admin_headers),
+            client.get("/admin/models", headers=admin_headers),
             client.get("/admin/users", headers=admin_headers),
             client.get("/admin/notices", headers=admin_headers),
             client.post(
@@ -74,6 +76,16 @@ class GuardTest(unittest.TestCase):
     def test_superadmin_passes_the_guard(self):
         for res in self._admin_routes(self.admin):
             self.assertIn(res.status_code, (200, 201))
+
+    def test_user_detail_and_history_are_guarded(self):
+        detail = f"/admin/users/{self.farmer_id}"
+        for res in (client.get(detail), client.get(f"{detail}/history")):
+            self.assertEqual(res.status_code, 401)
+        for res in (
+            client.get(detail, headers=self.farmer),
+            client.get(f"{detail}/history", headers=self.farmer),
+        ):
+            self.assertEqual(res.status_code, 403)
 
 
 class StatsAndUsersTest(unittest.TestCase):
@@ -233,6 +245,140 @@ class NoticeCrudTest(unittest.TestCase):
         self.assertEqual(
             client.delete("/admin/notices/999999", headers=self.admin).status_code, 404
         )
+
+
+class WeightsDirDefaultTest(unittest.TestCase):
+    def test_default_weights_dir_is_outputs_combined(self):
+        import os
+
+        from admin import _weights_dir
+
+        old = os.environ.pop("POTATO_WEIGHTS_DIR", None)
+        try:
+            self.assertEqual(_weights_dir().name, "outputs_combined")
+        finally:
+            if old is not None:
+                os.environ["POTATO_WEIGHTS_DIR"] = old
+
+
+class ReportingTest(unittest.TestCase):
+    """Dashboard, farmer profiles, per-farmer history and model inventory."""
+
+    def setUp(self):
+        auth._attempt_log.clear()
+        self.admin, self.admin_id = make_superadmin()
+        self.farmer_headers, self.farmer_id = sign_up()
+
+    def _push(self, items):
+        return client.put(
+            "/history", json={"items": items}, headers=self.farmer_headers
+        )
+
+    def test_overview_reports_totals_trends_and_mix(self):
+        self._push([
+            {"id": "1", "class": "Healthy", "confidence": 0.91,
+             "model": "Ensemble (All Models)"},
+            {"id": "2", "class": "Early Blight", "confidence": 0.72,
+             "model": "MobileNetV2 (transfer)"},
+        ])
+        body = client.get("/admin/overview", headers=self.admin).json()
+        for key in ("totals", "trends", "class_distribution", "model_usage",
+                    "recent_users", "recent_diagnoses"):
+            self.assertIn(key, body)
+        self.assertGreaterEqual(body["totals"]["users"], 2)
+        self.assertGreaterEqual(body["totals"]["history_items"], 2)
+        self.assertEqual(body["class_distribution"]["Healthy"], 1)
+        self.assertEqual(body["class_distribution"]["Early Blight"], 1)
+        self.assertIn("Ensemble (All Models)", body["model_usage"])
+        for key in ("new_users_7d", "new_diagnoses_7d", "sessions_24h",
+                    "diagnoses_24h"):
+            self.assertIsInstance(body["trends"][key], int)
+        self.assertTrue(body["recent_users"])
+        self.assertEqual(body["recent_diagnoses"][0]["user"], "Farmer")
+        self.assertEqual(body["recent_diagnoses"][0]["class"], "Early Blight")
+
+    def test_user_detail_is_a_full_profile(self):
+        self._push([{"id": "10", "class": "Healthy", "confidence": 0.8,
+                     "model": "Ensemble (All Models)"}])
+        body = client.get(f"/admin/users/{self.farmer_id}", headers=self.admin).json()
+        self.assertEqual(body["id"], self.farmer_id)
+        self.assertEqual(body["role"], "user")
+        self.assertIn("@example.com", body["contact"])
+        self.assertEqual(body["history_count"], 1)
+        self.assertGreaterEqual(body["session_count"], 1)
+        self.assertIsInstance(body["notices_read"], int)
+        self.assertIsNotNone(body["last_diagnosis_at"])
+        self.assertEqual(body["class_distribution"], {"Healthy": 1})
+
+        missing = client.get("/admin/users/999999", headers=self.admin)
+        self.assertEqual(missing.status_code, 404)
+
+    def test_user_history_returns_parsed_display_fields(self):
+        self._push([
+            {"id": "11", "class": "Late Blight", "confidence": 0.63,
+             "model": "Ensemble (All Models)", "timestamp": "10/1/2026, 1:04 PM",
+             "probabilities": {"Late Blight": 0.63, "Healthy": 0.37}},
+        ])
+        body = client.get(
+            f"/admin/users/{self.farmer_id}/history", headers=self.admin
+        ).json()
+        self.assertEqual(body["count"], 1)
+        item = body["items"][0]
+        self.assertEqual(item["class"], "Late Blight")
+        self.assertEqual(item["confidence"], 0.63)
+        self.assertEqual(item["model"], "Ensemble (All Models)")
+        self.assertEqual(item["timestamp"], "10/1/2026, 1:04 PM")
+        self.assertIsNotNone(item["updated_at"])
+        # Bulk payload fields are not shipped to the panel.
+        self.assertNotIn("probabilities", item)
+
+        self.assertEqual(
+            client.get(
+                f"/admin/users/{self.farmer_id}/history", params={"limit": 0},
+                headers=self.admin,
+            ).json()["count"],
+            1,
+        )
+        self.assertEqual(
+            client.get("/admin/users/999999/history", headers=self.admin).status_code,
+            404,
+        )
+
+    def test_models_inventory_describes_the_deployed_weights(self):
+        body = client.get("/admin/models", headers=self.admin).json()
+        self.assertEqual(body["default"], "ensemble")
+        self.assertTrue(body["classes"])
+        self.assertIn("Healthy", body["classes"])
+        self.assertIn("epochs", body["train_config"])
+        self.assertIn("members", body["ensemble"])
+        self.assertIn("entropy_max", body["thresholds"])
+
+        ids = [m["id"] for m in body["items"]]
+        self.assertEqual(ids, ["ensemble", "small_cnn", "mobilenetv2", "efficientnetb0"])
+        for model in body["items"]:
+            self.assertIn("name", model)
+            self.assertIn("available", model)
+            self.assertIsInstance(model["size_mb"], float)
+            self.assertIn("accuracy", model)
+        # Ensemble is virtual: available only when every member weight exists.
+        members = [m for m in body["items"] if m["id"] != "ensemble"]
+        ensemble = next(m for m in body["items"] if m["id"] == "ensemble")
+        self.assertEqual(
+            ensemble["available"], all(m["available"] for m in members)
+        )
+
+
+class WeightsDirDefaultTest(unittest.TestCase):
+    def test_default_weights_dir_is_outputs_combined(self):
+        import os
+        from admin import _weights_dir
+
+        old = os.environ.pop("POTATO_WEIGHTS_DIR", None)
+        try:
+            self.assertEqual(_weights_dir().name, "outputs_combined")
+        finally:
+            if old is not None:
+                os.environ["POTATO_WEIGHTS_DIR"] = old
 
 
 if __name__ == "__main__":
