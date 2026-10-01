@@ -192,5 +192,50 @@ class RoleTest(unittest.TestCase):
         self.assertEqual(login(contact, "potato1234").status_code, 401)
 
 
+class UpdateProfileTest(unittest.TestCase):
+    def test_update_me_changes_name_and_contact(self):
+        body = register().json()
+        token = body["token"]
+        new_contact = f"renamed{time.time_ns()}@example.com"
+        res = client.put(
+            "/auth/me",
+            json={"name": "Salina Kunwar", "contact": new_contact},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["name"], "Salina Kunwar")
+        self.assertEqual(res.json()["contact"], new_contact)
+
+        # The new contact signs in, the old one no longer does.
+        self.assertEqual(login(new_contact, "potato1234").status_code, 200)
+        self.assertEqual(login(body["user"]["contact"], "potato1234").status_code, 401)
+
+    def test_update_me_requires_auth(self):
+        res = client.put("/auth/me", json={"name": "X", "contact": "x@example.com"})
+        self.assertEqual(res.status_code, 401)
+
+    def test_update_me_rejects_a_taken_contact(self):
+        taken = register().json()["user"]["contact"]
+        token = register().json()["token"]
+        res = client.put(
+            "/auth/me",
+            json={"name": "Ram", "contact": taken},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res.status_code, 409)
+
+    def test_update_me_rejects_empty_fields(self):
+        token = register().json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        self.assertEqual(
+            client.put("/auth/me", json={"name": "", "contact": "a@example.com"}, headers=headers).status_code,
+            422,
+        )
+        self.assertEqual(
+            client.put("/auth/me", json={"name": "Ram", "contact": "  "}, headers=headers).status_code,
+            422,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

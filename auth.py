@@ -208,6 +208,46 @@ def me(user: dict = Depends(require_user)):
     return user
 
 
+class ProfileIn(BaseModel):
+    name: str = ""
+    contact: str = ""
+
+
+@router.put("/me")
+def update_me(body: ProfileIn, user: dict = Depends(require_user)):
+    """Edit the signed-in farmer's profile (Profile tab -> "Your details").
+
+    contact is the login identity, so it is normalised and checked for
+    collisions before the row is touched; the current token keeps working.
+    """
+    name = (body.name or "").strip()
+    contact = normalize_contact(body.contact)
+    if not name:
+        raise HTTPException(422, "Name is required.")
+    if len(name) > 80:
+        raise HTTPException(422, "Name must be 80 characters or fewer.")
+    if not contact:
+        raise HTTPException(422, "Email or phone is required.")
+
+    with connect() as conn:
+        clash = conn.execute(
+            "SELECT id FROM users WHERE contact = ? AND id != ?",
+            (contact, user["id"]),
+        ).fetchone()
+        if clash is not None:
+            raise HTTPException(409, "That contact is already registered.")
+        conn.execute(
+            "UPDATE users SET display_name = ?, contact = ? WHERE id = ?",
+            (name, contact, user["id"]),
+        )
+    return {
+        "id": user["id"],
+        "contact": contact,
+        "name": name,
+        "role": user.get("role", "user"),
+    }
+
+
 @router.post("/logout", status_code=204)
 def logout(authorization: str = Header(default="")):
     """Idempotent by design: signing out must never fail on a dead token."""
