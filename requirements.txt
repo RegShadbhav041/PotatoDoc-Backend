@@ -1,0 +1,8 @@
+torch>=2.2
+torchvision>=0.17
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+matplotlib
+numpy

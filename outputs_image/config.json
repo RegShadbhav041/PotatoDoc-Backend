@@ -1,0 +1,24 @@
+{
+ "mids": [
+  "small_cnn",
+  "mobilenetv2",
+  "efficientnetb0"
+ ],
+ "epochs": 25,
+ "batch": 32,
+ "img": 224,
+ "seed": 42,
+ "classes_csv": [
+  "early_blight",
+  "late_blight",
+  "healthy",
+  "non_leaf"
+ ],
+ "classes_api": [
+  "Early Blight",
+  "Late Blight",
+  "Healthy",
+  "Non-Leaf"
+ ],
+ "time": "2026-09-25 07:50"
+}
