@@ -28,6 +28,10 @@ from fastapi import FastAPI, UploadFile, File, Query, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from db import init_db
+from auth import router as auth_router
+from history import router as history_router
+
 # Repo root = this file's directory; override with POTATO_BASE_DIR if relocated.
 BASE = Path(os.environ.get("POTATO_BASE_DIR", Path(__file__).resolve().parent))
 # Switch weights dir without code change: POTATO_WEIGHTS_DIR=<dir> (restart server).
@@ -150,6 +154,12 @@ def gradcam_overlay(mid, img: Image.Image) -> str:
 # ---------- app ----------
 app = FastAPI(title="PotatoDoc backend")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Farmer accounts + synced history (see auth.py / history.py). Idempotent, so
+# safe at import time. The ML endpoints above stay unauthenticated.
+init_db()
+app.include_router(auth_router)
+app.include_router(history_router)
 
 @app.get("/ping", response_class=PlainTextResponse)
 def ping(): return "Hello, I am alive"
