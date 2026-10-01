@@ -1,6 +1,6 @@
 # PotatoDoc backend launcher: uvicorn + free Cloudflare quick tunnel.
 # Usage:  powershell -ExecutionPolicy Bypass -File start_backend.ps1
-# Prints the public URL — paste it into ..\Potato\mobile\.env as EXPO_PUBLIC_API_URL
+# Prints the public URL — paste it into ..\PotatoDoc\mobile\.env as EXPO_PUBLIC_API_URL
 # (the URL changes every restart; quick tunnels are ephemeral and free).
 
 $ErrorActionPreference = "Stop"
@@ -28,8 +28,14 @@ Start-Process -FilePath python -ArgumentList "-m","uvicorn","app:app","--host","
     -WorkingDirectory $root -WindowStyle Hidden `
     -RedirectStandardOutput "$logDir\uvicorn.out" -RedirectStandardError "$logDir\uvicorn.err"
 
-Start-Sleep -Seconds 3
-$ping = try { (Invoke-WebRequest -Uri http://127.0.0.1:8000/ping -UseBasicParsing -TimeoutSec 10).Content } catch { $null }
+# Cold start imports torch + torchvision (~15 s on a test machine), and uvicorn
+# only binds the port after the app module has loaded — poll rather than guess.
+$ping = $null
+foreach ($i in 1..25) {
+    Start-Sleep -Seconds 2
+    $ping = try { (Invoke-WebRequest -Uri http://127.0.0.1:8000/ping -UseBasicParsing -TimeoutSec 5).Content } catch { $null }
+    if ($ping -eq "Hello, I am alive") { break }
+}
 if ($ping -ne "Hello, I am alive") { Get-Content "$logDir\uvicorn.err" -Tail 20; throw "backend failed to start" }
 
 $tunnelLog = "$logDir\tunnel.log"
