@@ -69,6 +69,27 @@
       <!-- ---- Dashboard ---- -->
       <section id="view-dashboard" class="view">
         <div id="stats" class="stats"></div>
+        <div id="trends" class="trend-chips"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Disease class mix</h2></div>
+            <div id="class-bars" class="bars"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Model usage</h2></div>
+            <div id="model-bars" class="bars"></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Newest farmers</h2></div>
+            <div id="recent-users" class="list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Recent diagnoses</h2></div>
+            <div id="recent-diagnoses" class="list"></div>
+          </div>
+        </div>
         <div class="panel">
           <div class="panel-head">
             <h2>Quick actions</h2>
@@ -76,7 +97,7 @@
           <div class="quick">
             <button class="btn btn-primary" data-nav="notices">Write a notice</button>
             <button class="btn btn-outline" data-nav="users">Manage farmers</button>
-            <button class="btn btn-outline" id="refresh-stats">Refresh stats</button>
+            <button class="btn btn-outline" id="refresh-stats">Refresh dashboard</button>
           </div>
           <p class="muted" id="stats-updated"></p>
         </div>
