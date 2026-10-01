@@ -6,10 +6,11 @@ RUN pip install --no-cache-dir torch torchvision \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py small_cnn.py auth.py db.py history.py ./
+COPY app.py small_cnn.py auth.py db.py history.py notices.py admin.py ./
 COPY outputs_combined/ ./outputs_combined/
 COPY calibration/ ./calibration/
 COPY scripts/ ./scripts/
+COPY static/ ./static/
 COPY test_*.py ./
 
 # Cloud Run's filesystem is read-only outside /tmp, and the image is rebuilt

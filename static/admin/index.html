@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>PotatoDoc · Superadmin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ============ LOGIN ============ -->
+  <div id="login-view" class="login-wrap">
+    <div class="login-card">
+      <div class="login-mark">P</div>
+      <h1 class="login-title">PotatoDoc</h1>
+      <p class="login-sub">Superadmin console</p>
+
+      <form id="login-form" autocomplete="off">
+        <label class="field">
+          <span>Contact (email or phone)</span>
+          <input id="login-contact" type="text" required placeholder="admin@example.com">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="login-password" type="password" required placeholder="••••••••">
+        </label>
+        <div id="login-error" class="form-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
+      </form>
+
+      <p class="login-hint">
+        Superadmin accounts only. The bootstrap account is seeded from
+        <code>POTATO_SUPERADMIN_CONTACT</code> + <code>POTATO_SUPERADMIN_PASSWORD</code>,
+        or promote one with <code>scripts/make_superadmin.py</code>.
+      </p>
+    </div>
+  </div>
+
+  <!-- ============ APP ============ -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">P</span>
+        <div>
+          <div class="brand-name">PotatoDoc</div>
+          <div class="brand-sub">Superadmin</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-nav="dashboard">Dashboard</button>
+        <button class="nav-item" data-nav="users">Users</button>
+        <button class="nav-item" data-nav="notices">Notices</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div id="sidebar-user" class="sidebar-user"></div>
+        <button id="signout-btn" class="btn btn-ghost btn-block">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="page-title">Dashboard</h1>
+        <a class="link" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+      </header>
+
+      <!-- ---- Dashboard ---- -->
+      <section id="view-dashboard" class="view">
+        <div id="stats" class="stats"></div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Quick actions</h2>
+          </div>
+          <div class="quick">
+            <button class="btn btn-primary" data-nav="notices">Write a notice</button>
+            <button class="btn btn-outline" data-nav="users">Manage farmers</button>
+            <button class="btn btn-outline" id="refresh-stats">Refresh stats</button>
+          </div>
+          <p class="muted" id="stats-updated"></p>
+        </div>
+      </section>
+
+      <!-- ---- Users ---- -->
+      <section id="view-users" class="view hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Farmer accounts</h2>
+            <button class="btn btn-outline btn-sm" id="users-refresh">Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Contact</th>
+                  <th>Role</th>
+                  <th>Joined</th>
+                  <th class="right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-body">
+                <tr><td colspan="5" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---- Notices ---- -->
+      <section id="view-notices" class="view hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="composer-title">New notice</h2>
+            <button class="btn btn-outline btn-sm hidden" id="composer-cancel">Cancel edit</button>
+          </div>
+          <form id="notice-form" autocomplete="off">
+            <div class="grid-2">
+              <label class="field">
+                <span>Title *</span>
+                <input id="n-title" type="text" maxlength="200" required
+                       placeholder="Blight risk rising after rainfall">
+              </label>
+              <label class="field">
+                <span>Category</span>
+                <select id="n-category">
+                  <option value="update">Update</option>
+                  <option value="announcement">Announcement</option>
+                  <option value="crop_alert">Crop alert</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Status</span>
+                <select id="n-status">
+                  <option value="published">Published</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Author label</span>
+                <input id="n-author" type="text" maxlength="60" placeholder="Super Admin">
+              </label>
+            </div>
+            <label class="field">
+              <span>Body</span>
+              <textarea id="n-body" rows="4"
+                        placeholder="What should farmers know?"></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="n-save">Publish notice</button>
+              <span id="notice-form-msg" class="form-msg"></span>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>All notices</h2>
+            <div class="filters">
+              <button class="chip active" data-status="">All</button>
+              <button class="chip" data-status="published">Published</button>
+              <button class="chip" data-status="draft">Drafts</button>
+              <button class="btn btn-outline btn-sm" id="notices-refresh">Refresh</button>
+            </div>
+          </div>
+          <div id="notices-list" class="notices-list">
+            <p class="muted">Loading…</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

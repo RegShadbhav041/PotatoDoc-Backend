@@ -14,6 +14,15 @@ Run:
   uvicorn app:app --host 0.0.0.0 --port 8000
   Phone + PC on same WiFi; set EXPO_PUBLIC_API_URL=http://<PC-LAN-IP>:8000 in mobile/.env
   Deployed: EXPO_PUBLIC_API_URL=https://<cloud-run-url> in mobile/.env
+
+Notices + superadmin (additive; existing mobile contract above unchanged):
+  GET    /notices[?category=<update|announcement|crop_alert>] public -> {items, unread}
+  GET    /notices/unread-count  auth -> {unread}
+  POST   /notices/{id}/read     auth -> {ok, unread}
+  POST   /notices/read-all      auth -> {marked, unread}
+  /admin/*                      superadmin only -> 403 otherwise (admin.py)
+  Web panel: GET /admin/ (static/admin); account seeded from
+  POTATO_SUPERADMIN_CONTACT + POTATO_SUPERADMIN_PASSWORD (see db.py).
 """
 from pathlib import Path
 import io, base64, math, os, json
@@ -27,10 +36,13 @@ from torchvision import transforms, models
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from db import init_db
 from auth import router as auth_router
 from history import router as history_router
+from notices import router as notices_router
+from admin import router as admin_router
 
 # Repo root = this file's directory; override with POTATO_BASE_DIR if relocated.
 BASE = Path(os.environ.get("POTATO_BASE_DIR", Path(__file__).resolve().parent))
@@ -160,6 +172,14 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 init_db()
 app.include_router(auth_router)
 app.include_router(history_router)
+app.include_router(notices_router)
+app.include_router(admin_router)
+
+# Superadmin web panel — plain static HTML/JS, no build step. Guarded so the
+# API still boots in a checkout that predates static/.
+_ADMIN_DIR = BASE / "static" / "admin"
+if _ADMIN_DIR.is_dir():
+    app.mount("/admin", StaticFiles(directory=str(_ADMIN_DIR), html=True), name="admin")
 
 @app.get("/ping", response_class=PlainTextResponse)
 def ping(): return "Hello, I am alive"
