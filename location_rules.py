@@ -248,7 +248,7 @@ def challenges(annual_rain, alt, coldest_c, clay_pct, ph, climate_zone_name):
         out.append("Monsoon disease pressure (Jun–Sep)")
     if alt > 2000 or (coldest_c is not None and coldest_c < 3):
         out.append("Frost risk at planting or harvest")
-    if clay_pct and annual_rain and annual_rain > 2000:
+    if clay_pct is not None and clay_pct > 30 and annual_rain and annual_rain > 2000:
         out.append("Waterlogging on heavy soils")
     if annual_rain is not None and annual_rain < 800:
         out.append("Low rainfall — irrigation needed")
