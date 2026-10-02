@@ -44,6 +44,14 @@ def create_notice(admin, **overrides):
     return client.post("/admin/notices", json=body, headers=admin)
 
 
+def _png(width=64, height=64):
+    import io as _io
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (width, height), (30, 140, 60)).save(buf, "PNG")
+    return buf.getvalue()
+
+
 class GuardTest(unittest.TestCase):
     def setUp(self):
         auth._attempt_log.clear()
@@ -379,6 +387,106 @@ class WeightsDirDefaultTest(unittest.TestCase):
         finally:
             if old is not None:
                 os.environ["POTATO_WEIGHTS_DIR"] = old
+
+
+class NoticeImageTest(unittest.TestCase):
+    def setUp(self):
+        auth._attempt_log.clear()
+        self.admin, self.admin_id = make_superadmin()
+        self.notice = create_notice(self.admin, title="With pictures").json()
+
+    def upload(self, notice_id=None, payload=None):
+        return client.post(
+            f"/admin/notices/{notice_id or self.notice['id']}/images",
+            files={"file": ("pic.png", payload or _png(), "image/png")},
+            headers=self.admin,
+        )
+
+    def test_upload_counts_the_image_in_admin_and_public_lists(self):
+        res = self.upload()
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json()["image_count"], 1)
+        admin_items = client.get("/admin/notices", headers=self.admin).json()["items"]
+        self.assertEqual(admin_items[0]["image_count"], 1)
+        public_items = client.get("/notices").json()["items"]
+        self.assertEqual(public_items[0]["image_count"], 1)
+
+    def test_uploaded_image_is_served_publicly_as_a_resized_jpeg(self):
+        self.upload()
+        res = client.get(f"/notices/{self.notice['id']}/images/0")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers["content-type"], "image/jpeg")
+        import io as _io
+        from PIL import Image
+        self.assertEqual(Image.open(_io.BytesIO(res.content)).size, (64, 64))
+
+    def test_six_images_are_allowed_and_the_seventh_is_rejected(self):
+        for _ in range(6):
+            self.assertEqual(self.upload().status_code, 201)
+        res = self.upload()
+        self.assertEqual(res.status_code, 422)
+        self.assertIn("at most 6", res.json()["detail"])
+
+    def test_unknown_notice_is_404(self):
+        self.assertEqual(self.upload(notice_id=999999).status_code, 404)
+
+    def test_admin_route_serves_draft_images_to_the_superadmin(self):
+        draft = create_notice(self.admin, status="draft", title="Unreleased").json()
+        self.upload(notice_id=draft["id"])
+        # the public route hides drafts ...
+        self.assertEqual(client.get(f"/notices/{draft['id']}/images/0").status_code, 404)
+        # ... but the panel (same-origin <img> with the token) can still preview them
+        res = client.get(f"/admin/notices/{draft['id']}/images/0", headers=self.admin)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers["content-type"], "image/jpeg")
+        self.assertEqual(
+            client.get(f"/admin/notices/{draft['id']}/images/0").status_code, 401
+        )
+
+    def test_anonymous_and_ordinary_farmers_are_rejected(self):
+        files = {"file": ("pic.png", _png(), "image/png")}
+        self.assertEqual(
+            client.post(f"/admin/notices/{self.notice['id']}/images", files=files).status_code,
+            401,
+        )
+        farmer, _ = sign_up()
+        self.assertEqual(
+            client.post(
+                f"/admin/notices/{self.notice['id']}/images", files=files, headers=farmer
+            ).status_code,
+            403,
+        )
+
+    def test_delete_by_index_removes_the_right_image(self):
+        for _ in range(3):
+            self.upload()
+        first = client.get(f"/notices/{self.notice['id']}/images/0").content
+        res = client.delete(
+            f"/admin/notices/{self.notice['id']}/images/1", headers=self.admin
+        )
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(client.get(f"/notices/{self.notice['id']}/images/0").content, first)
+        self.assertEqual(client.get(f"/notices/{self.notice['id']}/images/2").status_code, 404)
+        self.assertEqual(
+            client.delete(
+                f"/admin/notices/{self.notice['id']}/images/5", headers=self.admin
+            ).status_code,
+            404,
+        )
+
+    def test_deleting_the_notice_removes_its_images(self):
+        self.upload()
+        notice_id = self.notice["id"]
+        self.assertEqual(
+            client.delete(f"/admin/notices/{notice_id}", headers=self.admin).status_code, 204
+        )
+        self.assertEqual(client.get(f"/notices/{notice_id}/images/0").status_code, 404)
+
+    def test_new_categories_are_accepted_by_the_crud(self):
+        for category in ("new_product", "medicine"):
+            res = create_notice(self.admin, category=category, title=f"Cat {category}")
+            self.assertEqual(res.status_code, 201, res.text)
+            self.assertEqual(res.json()["category"], category)
 
 
 if __name__ == "__main__":
