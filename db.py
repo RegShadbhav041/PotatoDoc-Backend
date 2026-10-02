@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name  TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'user',
+  photo         BLOB,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS sessions (
@@ -52,14 +53,22 @@ CREATE TABLE IF NOT EXISTS notice_reads (
   read_at   TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, notice_id)
 );
+CREATE TABLE IF NOT EXISTS notice_images (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  notice_id  INTEGER NOT NULL REFERENCES notices(id) ON DELETE CASCADE,
+  data       BLOB NOT NULL,
+  mime       TEXT NOT NULL DEFAULT 'image/jpeg',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notices_status ON notices(status, id DESC);
+CREATE INDEX IF NOT EXISTS idx_notice_images_notice ON notice_images(notice_id, id);
 """
 
 # Keep the schema string pure SQL (executescript ignores nothing) — the
 # python constants live here instead.
-NOTICE_CATEGORIES = ("update", "announcement", "crop_alert")
+NOTICE_CATEGORIES = ("update", "announcement", "crop_alert", "new_product", "medicine")
 NOTICE_STATUSES = ("draft", "published")
 ROLES = ("user", "superadmin")
 
@@ -90,6 +99,8 @@ def _migrate(conn):
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
     if "role" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    if "photo" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN photo BLOB")
 
 
 def _seed_superadmin():
