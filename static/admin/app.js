@@ -75,6 +75,88 @@
     return data;
   }
 
+  /**
+   * Authed image bytes -> object URL. A bare <img src> cannot send the
+   * Authorization header, and draft images are admin-only, so the panel
+   * fetches with the token and swaps in a blob URL. Panel lists are small,
+   * so sequential hydration is fine.
+   */
+  async function imageUrl(path) {
+    var res = await fetch(path, {
+      headers: state.token ? { Authorization: "Bearer " + state.token } : {},
+    });
+    if (res.status === 401) {
+      signOut(false);
+      throw new Error("Session expired — please sign in again.");
+    }
+    if (!res.ok) throw new Error("Image failed to load (" + res.status + ")");
+    return URL.createObjectURL(await res.blob());
+  }
+
+  function hydrateThumbs(root) {
+    var imgs = root.querySelectorAll("img[data-thumb]");
+    Array.prototype.forEach.call(imgs, function (el) {
+      imageUrl(el.dataset.thumb)
+        .then(function (url) { el.src = url; })
+        .catch(function () { el.classList.add("thumb-missing"); });
+    });
+  }
+
+  /** Multipart upload — api() only speaks JSON, so this talks to fetch directly. */
+  async function uploadNoticeImage(noticeId, file) {
+    var fd = new FormData();
+    fd.append("file", file, file.name || "image.jpg");
+    var res = await fetch("/admin/notices/" + noticeId + "/images", {
+      method: "POST",
+      body: fd,
+      headers: state.token ? { Authorization: "Bearer " + state.token } : {},
+    });
+    if (res.status === 401) {
+      signOut(false);
+      throw new Error("Session expired — please sign in again.");
+    }
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) throw new Error((data && data.detail) || "Upload failed (" + res.status + ")");
+    return data;
+  }
+
+  /** Thumbnails while editing: each has a remove button keyed by index. */
+  function renderThumbEditor(count) {
+    var el = $("#n-thumbs");
+    if (!count || !state.editingId) {
+      el.innerHTML = "";
+      el.classList.add("hidden");
+      return;
+    }
+    el.classList.remove("hidden");
+    el.innerHTML = Array.from({ length: count }, function (_, i) {
+      return (
+        '<span class="thumb-slot">' +
+        '<img class="notice-thumb" alt="" data-thumb="/admin/notices/' +
+        state.editingId + "/images/" + i + '">' +
+        '<button type="button" class="thumb-rm" data-rmimg="' + i + '" title="Remove image">&times;</button>' +
+        "</span>"
+      );
+    }).join("");
+    hydrateThumbs(el);
+  }
+
+  async function removeNoticeImage(index) {
+    if (!state.editingId) return;
+    if (!window.confirm("Remove this image from the notice?")) return;
+    try {
+      await api("/admin/notices/" + state.editingId + "/images/" + index, { method: "DELETE" });
+      var data = await api("/admin/notices");
+      var n = data.items.find(function (x) { return x.id === state.editingId; });
+      renderThumbEditor(n ? n.image_count : 0);
+      renderNotices();
+      toast("Image removed");
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
   /* ---------------- auth ---------------- */
 
   function showLogin() {
@@ -351,7 +433,13 @@
 
   /* ---------------- notices ---------------- */
 
-  var CAT_LABELS = { update: "Update", announcement: "Announcement", crop_alert: "Crop alert" };
+  var CAT_LABELS = {
+    update: "Update",
+    announcement: "Announcement",
+    crop_alert: "Crop alert",
+    new_product: "New product",
+    medicine: "Medicine",
+  };
 
   function resetComposer() {
     state.editingId = null;
@@ -364,6 +452,9 @@
     $("#composer-cancel").classList.add("hidden");
     $("#notice-form-msg").textContent = "";
     $("#notice-form-msg").classList.remove("error");
+    $("#n-images").value = "";
+    $("#n-thumbs").innerHTML = "";
+    $("#n-thumbs").classList.add("hidden");
   }
 
   async function renderNotices() {
@@ -384,6 +475,18 @@
           '<span class="badge badge-' + esc(n.status) + '">' + esc(n.status) + "</span>" +
           "</div>" +
           (n.body ? '<p class="notice-body">' + esc(n.body) + "</p>" : "") +
+          (n.image_count
+            ? '<div class="thumb-row">' +
+              Array.from({ length: n.image_count }, function (_, i) {
+                return (
+                  '<span class="thumb-slot">' +
+                  '<img class="notice-thumb" alt="" data-thumb="/admin/notices/' +
+                  n.id + "/images/" + i + '">' +
+                  "</span>"
+                );
+              }).join("") +
+              "</div>"
+            : "") +
           '<div class="notice-meta">' +
           "<span>" + esc(n.author_name || "Super Admin") + "</span>" +
           "<span>" + esc(fmtDate(n.created_at)) + "</span>" +
@@ -393,6 +496,7 @@
           '<button class="btn btn-danger btn-sm" data-delete="' + n.id + '">Delete</button>' +
           "</div></div></article>";
       }).join("");
+      hydrateThumbs(list);
     } catch (err) {
       list.innerHTML = '<p class="muted">' + esc(err.message) + "</p>";
     }
@@ -414,6 +518,7 @@
       $("#composer-cancel").classList.remove("hidden");
       $("#view-notices").scrollTop = 0;
       window.scrollTo({ top: 0, behavior: "smooth" });
+      renderThumbEditor(n.image_count || 0);
     } catch (err) {
       toast(err.message, true);
     }
@@ -431,16 +536,36 @@
     };
     $("#n-save").disabled = true;
     try {
+      var saved;
       if (state.editingId) {
-        await api("/admin/notices/" + state.editingId, { method: "PUT", body: payload });
+        saved = await api("/admin/notices/" + state.editingId, { method: "PUT", body: payload });
         toast("Notice updated");
       } else {
-        await api("/admin/notices", { method: "POST", body: payload });
+        saved = await api("/admin/notices", { method: "POST", body: payload });
         toast(payload.status === "draft" ? "Draft saved" : "Notice published");
+      }
+      // Snapshot the files before resetComposer() clears the input.
+      var pending = Array.prototype.slice.call($("#n-images").files || []);
+      var uploadErr = null;
+      for (var i = 0; i < pending.length && !uploadErr; i++) {
+        try {
+          await uploadNoticeImage(saved.id, pending[i]);
+        } catch (imgErr) {
+          uploadErr = imgErr;
+        }
       }
       resetComposer();
       renderNotices();
       renderOverview();
+      if (uploadErr) {
+        toast("Notice saved, but an image failed: " + uploadErr.message, true);
+      } else if (pending.length) {
+        toast(
+          pending.length === 1
+            ? "Notice saved with 1 image"
+            : "Notice saved with " + pending.length + " images"
+        );
+      }
     } catch (err) {
       msg.textContent = err.message;
       msg.classList.add("error");
@@ -550,7 +675,9 @@
       var edit = e.target.closest("[data-edit]");
       if (edit) { startEdit(Number(edit.dataset.edit)); return; }
       var del = e.target.closest("[data-delete]");
-      if (del) deleteNotice(Number(del.dataset.delete));
+      if (del) { deleteNotice(Number(del.dataset.delete)); return; }
+      var rmImg = e.target.closest("[data-rmimg]");
+      if (rmImg) { removeNoticeImage(Number(rmImg.dataset.rmimg)); }
     });
 
     if (state.token && state.user) showApp();

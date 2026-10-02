@@ -189,6 +189,8 @@
                   <option value="update">Update</option>
                   <option value="announcement">Announcement</option>
                   <option value="crop_alert">Crop alert</option>
+                  <option value="new_product">New product</option>
+                  <option value="medicine">Medicine</option>
                 </select>
               </label>
               <label class="field">
@@ -208,6 +210,12 @@
               <textarea id="n-body" rows="4"
                         placeholder="What should farmers know?"></textarea>
             </label>
+            <label class="field">
+              <span>Images (up to 6, optional)</span>
+              <input id="n-images" type="file" accept="image/*" multiple>
+              <small class="muted">Pictures upload right after the notice is saved.</small>
+            </label>
+            <div id="n-thumbs" class="thumb-row hidden"></div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="n-save">Publish notice</button>
               <span id="notice-form-msg" class="form-msg"></span>
