@@ -11,7 +11,8 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Response, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Header, Response, Security, File, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -19,6 +20,10 @@ from db import connect
 from media import normalise, to_data_uri
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Declares the OpenAPI security scheme so Swagger UI shows the Authorize
+# button. auto_error=False keeps our own 401 flow byte-identical.
+_bearer = HTTPBearer(auto_error=False, scheme_name="Bearer")
 
 TOKEN_TTL_DAYS = int(os.environ.get("POTATO_TOKEN_TTL_DAYS", "30"))
 LOGIN_WINDOW_S = 300
@@ -199,8 +204,9 @@ def _resolve_session(authorization):
     }
 
 
-def require_user(authorization: str = Header(default="")):
+def require_user(credentials: HTTPAuthorizationCredentials | None = Security(_bearer)):
     """FastAPI dependency: resolves a valid bearer token to the farmer."""
+    authorization = f"{credentials.scheme} {credentials.credentials}" if credentials else ""
     user = _resolve_session(authorization)
     if user is None:
         raise HTTPException(401, "Not authenticated")
@@ -290,9 +296,10 @@ def delete_photo(user: dict = Depends(require_user)):
 
 
 @router.post("/logout", status_code=204)
-def logout(authorization: str = Header(default="")):
+def logout(credentials: HTTPAuthorizationCredentials | None = Security(_bearer)):
     """Idempotent by design: signing out must never fail on a dead token."""
-    _, _, token = (authorization or "").partition(" ")
+    authorization = f"{credentials.scheme} {credentials.credentials}" if credentials else ""
+    _, _, token = authorization.partition(" ")
     token = token.strip()
     if token:
         with connect() as conn:
