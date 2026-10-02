@@ -237,5 +237,96 @@ class UpdateProfileTest(unittest.TestCase):
         )
 
 
+def tiny_png(width=300, height=200):
+    import io as _io
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (width, height), (10, 120, 30)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+class PhotoTest(unittest.TestCase):
+    def auth_headers(self, res=None):
+        body = (res or register()).json()
+        return {"Authorization": f"Bearer {body['token']}"}, body["user"]["contact"]
+
+    def upload(self, headers, payload=None, name="photo.png", ctype="image/png"):
+        return client.post(
+            "/auth/me/photo",
+            files={"file": (name, payload if payload is not None else tiny_png(), ctype)},
+            headers=headers,
+        )
+
+    def test_fresh_register_has_no_photo(self):
+        self.assertIsNone(register().json()["user"]["photo"])
+
+    def test_upload_returns_a_data_uri_and_me_serves_it_back(self):
+        headers, _ = self.auth_headers()
+        res = self.upload(headers)
+        self.assertEqual(res.status_code, 200)
+        photo = res.json()["photo"]
+        self.assertTrue(photo.startswith("data:image/jpeg;base64,"))
+        self.assertEqual(client.get("/auth/me", headers=headers).json()["photo"], photo)
+
+    def test_a_fresh_login_includes_the_photo(self):
+        headers, contact = self.auth_headers()
+        self.upload(headers)
+        login_body = login(contact, "potato1234").json()
+        self.assertTrue(login_body["user"]["photo"].startswith("data:image/jpeg;base64,"))
+
+    def test_update_me_keeps_the_photo_in_its_response(self):
+        headers, _ = self.auth_headers()
+        self.upload(headers)
+        res = client.put(
+            "/auth/me",
+            json={"name": "Renamed Farmer", "contact": f"p{time.time_ns()}@example.com"},
+            headers=headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["photo"].startswith("data:image/jpeg;base64,"))
+
+    def test_upload_replaces_the_previous_picture(self):
+        import base64
+        import io as _io
+        from PIL import Image
+        headers, _ = self.auth_headers()
+        self.upload(headers, payload=tiny_png(300, 200))
+        self.upload(headers, payload=tiny_png(64, 64))
+        photo = client.get("/auth/me", headers=headers).json()["photo"]
+        raw = base64.b64decode(photo.split(",", 1)[1])
+        self.assertEqual(Image.open(_io.BytesIO(raw)).size, (64, 64))
+
+    def test_delete_clears_the_photo(self):
+        headers, _ = self.auth_headers()
+        self.upload(headers)
+        res = client.delete("/auth/me/photo", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.json()["photo"])
+        self.assertIsNone(client.get("/auth/me", headers=headers).json()["photo"])
+
+    def test_upload_requires_auth(self):
+        res = self.upload({"Authorization": ""})
+        self.assertEqual(res.status_code, 401)
+
+    def test_delete_requires_auth(self):
+        self.assertEqual(client.delete("/auth/me/photo").status_code, 401)
+
+    def test_non_image_payloads_are_rejected(self):
+        headers, _ = self.auth_headers()
+        res = self.upload(headers, payload=b"hello", name="x.txt", ctype="text/plain")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("detail", res.json())
+
+    def test_payloads_over_five_megabytes_are_rejected(self):
+        headers, _ = self.auth_headers()
+        res = self.upload(
+            headers,
+            payload=b"x" * (5 * 1024 * 1024 + 1),
+            name="big.jpg",
+            ctype="image/jpeg",
+        )
+        self.assertEqual(res.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()
