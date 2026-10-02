@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir torch torchvision \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py small_cnn.py auth.py db.py history.py notices.py admin.py media.py ./
+COPY app.py small_cnn.py auth.py db.py history.py notices.py tickets.py admin.py media.py ./
 COPY outputs_combined/ ./outputs_combined/
 COPY calibration/ ./calibration/
 COPY scripts/ ./scripts/

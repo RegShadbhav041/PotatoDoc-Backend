@@ -5,4 +5,8 @@ uvicorn[standard]
 python-multipart
 pillow
 matplotlib
-numpy
+# torch <2.3 is compiled against the NumPy 1.x C-API and raises
+# "RuntimeError: Numpy is not available" on every torch->numpy conversion
+# (which ToTensor does on every /predict and /gradcam request). Fresh installs
+# otherwise pull numpy 2.x and every image request 500s.
+numpy<2
