@@ -2,7 +2,7 @@ import itertools
 import time
 import unittest
 
-from test_helpers import client
+from test_helpers import client, app
 
 import auth
 
@@ -326,6 +326,29 @@ class PhotoTest(unittest.TestCase):
             ctype="image/jpeg",
         )
         self.assertEqual(res.status_code, 422)
+
+
+class OpenApiSecurityTest(unittest.TestCase):
+    """The OpenAPI document must declare the bearer scheme so Swagger UI
+    shows the Authorize button on protected routes (and only those)."""
+
+    def test_openapi_declares_bearer_scheme(self):
+        schema = app.openapi()
+        schemes = schema.get("components", {}).get("securitySchemes", {})
+        self.assertIn("Bearer", schemes)
+        self.assertEqual(schemes["Bearer"]["type"], "http")
+        self.assertEqual(schemes["Bearer"]["scheme"], "bearer")
+
+    def test_protected_routes_are_locked_and_public_ones_are_not(self):
+        schema = app.openapi()
+        me = schema["paths"]["/auth/me"]["get"]
+        self.assertEqual(me.get("security"), [{"Bearer": []}])
+        history = schema["paths"]["/history"]["get"]
+        self.assertEqual(history.get("security"), [{"Bearer": []}])
+        login = schema["paths"]["/auth/login"]["post"]
+        self.assertNotIn("security", login)
+        analyze = schema["paths"]["/location/analyze"]["get"]
+        self.assertNotIn("security", analyze)
 
 
 if __name__ == "__main__":
