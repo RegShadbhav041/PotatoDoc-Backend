@@ -14,13 +14,16 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, File, UploadFile
 from pydantic import BaseModel
 
 from auth import require_superadmin
 from db import NOTICE_CATEGORIES, NOTICE_STATUSES, ROLES, connect
+from media import normalise
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+MAX_NOTICE_IMAGES = 6
 
 
 class RoleIn(BaseModel):
@@ -46,6 +49,7 @@ def _notice_row(row):
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "read_count": row["read_count"],
+        "image_count": row["image_count"],
     }
 
 
@@ -130,7 +134,9 @@ def list_all_notices(status: str = "", admin: dict = Depends(require_superadmin)
     """All notices including drafts, with per-notice read counts."""
     sql = (
         "SELECT n.*, (SELECT COUNT(*) FROM notice_reads r "
-        "             WHERE r.notice_id = n.id) AS read_count "
+        "             WHERE r.notice_id = n.id) AS read_count, "
+        "       (SELECT COUNT(*) FROM notice_images i "
+        "             WHERE i.notice_id = n.id) AS image_count "
         "FROM notices n"
     )
     args: list = []
@@ -156,7 +162,9 @@ def create_notice(body: NoticeIn, admin: dict = Depends(require_superadmin)):
         )
         notice_id = cur.lastrowid
         row = conn.execute(
-            "SELECT n.*, 0 AS read_count FROM notices n WHERE n.id = ?",
+            "SELECT n.*, 0 AS read_count, "
+            " (SELECT COUNT(*) FROM notice_images i WHERE i.notice_id = n.id) AS image_count "
+            "FROM notices n WHERE n.id = ?",
             (notice_id,),
         ).fetchone()
     return _notice_row(row)
@@ -176,7 +184,9 @@ def update_notice(notice_id: int, body: NoticeIn, admin: dict = Depends(require_
         )
         row = conn.execute(
             "SELECT n.*, (SELECT COUNT(*) FROM notice_reads r "
-            "             WHERE r.notice_id = n.id) AS read_count "
+            "             WHERE r.notice_id = n.id) AS read_count, "
+            "       (SELECT COUNT(*) FROM notice_images i "
+            "             WHERE i.notice_id = n.id) AS image_count "
             "FROM notices n WHERE n.id = ?",
             (notice_id,),
         ).fetchone()
@@ -190,6 +200,82 @@ def delete_notice(notice_id: int, admin: dict = Depends(require_superadmin)):
         if cur.rowcount == 0:
             raise HTTPException(404, "Notice not found.")
     return Response(status_code=204)
+
+
+@router.post("/notices/{notice_id}/images", status_code=201)
+def upload_notice_image(
+    notice_id: int,
+    file: UploadFile = File(...),
+    admin: dict = Depends(require_superadmin),
+):
+    """Attach one picture to a notice (gallery, max 6, upload order)."""
+    with connect() as conn:
+        exists = conn.execute(
+            "SELECT id FROM notices WHERE id = ?", (notice_id,)
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(404, "Notice not found.")
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM notice_images WHERE notice_id = ?",
+            (notice_id,),
+        ).fetchone()["n"]
+        if count >= MAX_NOTICE_IMAGES:
+            raise HTTPException(422, "A notice can have at most 6 images.")
+    data, mime = normalise(file.file.read(), file.content_type, max_edge=1280, quality=85)
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO notice_images (notice_id, data, mime) VALUES (?, ?, ?)",
+            (notice_id, data, mime),
+        )
+        row = conn.execute(
+            "SELECT n.*, (SELECT COUNT(*) FROM notice_reads r "
+            "             WHERE r.notice_id = n.id) AS read_count, "
+            "       (SELECT COUNT(*) FROM notice_images i "
+            "             WHERE i.notice_id = n.id) AS image_count "
+            "FROM notices n WHERE n.id = ?",
+            (notice_id,),
+        ).fetchone()
+    return _notice_row(row)
+
+
+@router.delete("/notices/{notice_id}/images/{index}", status_code=204)
+def delete_notice_image(
+    notice_id: int, index: int, admin: dict = Depends(require_superadmin)
+):
+    """Remove the image at 0-based position `index` — the same index the
+    public GET uses, so the panel never has to track image ids."""
+    if index < 0:
+        raise HTTPException(404, "Image not found.")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM notice_images WHERE notice_id = ? "
+            "ORDER BY id LIMIT 1 OFFSET ?",
+            (notice_id, index),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Image not found.")
+        conn.execute("DELETE FROM notice_images WHERE id = ?", (row["id"],))
+    return Response(status_code=204)
+
+
+@router.get("/notices/{notice_id}/images/{index}")
+def admin_notice_image(
+    notice_id: int, index: int, admin: dict = Depends(require_superadmin)
+):
+    """Same bytes as the public route, but superadmin-only and status-blind —
+    the panel previews draft images with fetch() + an Authorization header
+    (a bare <img src> cannot carry one)."""
+    if index < 0:
+        raise HTTPException(404, "Image not found.")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT data, mime FROM notice_images WHERE notice_id = ? "
+            "ORDER BY id LIMIT 1 OFFSET ?",
+            (notice_id, index),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Image not found.")
+    return Response(content=row["data"], media_type=row["mime"])
 
 
 # ---------------------------------------------------------------------------
