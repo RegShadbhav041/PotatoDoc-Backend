@@ -128,6 +128,11 @@ class SeasonVarietyTextTest(unittest.TestCase):
         self.assertIn("Heat stress in late crop (Mar–May)", out)
         self.assertIn("Soil too acidic — apply lime before planting", out)
         self.assertNotIn("Frost risk at planting or harvest", out)
+        sandy = challenges(
+            annual_rain=2800, alt=855, coldest_c=15.5,
+            clay_pct=15, ph=4.9, climate_zone_name="Tropical",
+        )
+        self.assertNotIn("Waterlogging on heavy soils", sandy)
         cold = challenges(
             annual_rain=400, alt=3400, coldest_c=-6,
             clay_pct=None, ph=None, climate_zone_name="Alpine",
