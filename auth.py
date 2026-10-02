@@ -11,11 +11,12 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Response
+from fastapi import APIRouter, Depends, HTTPException, Header, Response, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from db import connect
+from media import normalise, to_data_uri
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -87,6 +88,17 @@ def _clear_failures(contact):
     _attempt_log.pop(contact, None)
 
 
+def _photo_data_uri(user_id):
+    """The farmer's profile picture as a data-URI, or None.
+
+    Loaded only where a response actually needs it — the per-request session
+    lookup stays blob-free.
+    """
+    with connect() as conn:
+        row = conn.execute("SELECT photo FROM users WHERE id = ?", (user_id,)).fetchone()
+    return to_data_uri(row["photo"]) if row is not None and row["photo"] else None
+
+
 def _issue_session(user_id, contact, name, role="user"):
     token = secrets.token_urlsafe(32)
     expires_at = (datetime.now(timezone.utc) + timedelta(days=TOKEN_TTL_DAYS)).isoformat()
@@ -95,7 +107,8 @@ def _issue_session(user_id, contact, name, role="user"):
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             (token, user_id, expires_at),
         )
-    return token, {"id": user_id, "contact": contact, "name": name, "role": role}
+    photo = _photo_data_uri(user_id)
+    return token, {"id": user_id, "contact": contact, "name": name, "role": role, "photo": photo}
 
 
 @router.post("/register", status_code=201)
@@ -205,7 +218,7 @@ def require_superadmin(user: dict = Depends(require_user)):
 
 @router.get("/me")
 def me(user: dict = Depends(require_user)):
-    return user
+    return {**user, "photo": _photo_data_uri(user["id"])}
 
 
 class ProfileIn(BaseModel):
@@ -245,7 +258,28 @@ def update_me(body: ProfileIn, user: dict = Depends(require_user)):
         "contact": contact,
         "name": name,
         "role": user.get("role", "user"),
+        "photo": _photo_data_uri(user["id"]),
     }
+
+
+@router.post("/me/photo")
+def upload_photo(file: UploadFile = File(...), user: dict = Depends(require_user)):
+    """Set the signed-in farmer's profile picture (Profile tab -> details sheet).
+
+    Re-encoded server-side (EXIF stripped, longest edge 512px, JPEG) so a
+    phone camera dump can never bloat the database.
+    """
+    data, mime = normalise(file.file.read(), file.content_type, max_edge=512, quality=82)
+    with connect() as conn:
+        conn.execute("UPDATE users SET photo = ? WHERE id = ?", (data, user["id"]))
+    return {**user, "photo": to_data_uri(data, mime)}
+
+
+@router.delete("/me/photo")
+def delete_photo(user: dict = Depends(require_user)):
+    with connect() as conn:
+        conn.execute("UPDATE users SET photo = NULL WHERE id = ?", (user["id"],))
+    return {**user, "photo": None}
 
 
 @router.post("/logout", status_code=204)
