@@ -7,6 +7,7 @@
 
   var TOKEN_KEY = "potatodocAdminToken";
   var USER_KEY = "potatodocAdminUser";
+  var MAX_NOTICE_IMAGES = 6;
 
   var state = {
     token: localStorage.getItem(TOKEN_KEY) || "",
@@ -546,6 +547,12 @@
       }
       // Snapshot the files before resetComposer() clears the input.
       var pending = Array.prototype.slice.call($("#n-images").files || []);
+      var existing = state.editingId ? saved.image_count || 0 : 0;
+      var room = MAX_NOTICE_IMAGES - existing;
+      if (pending.length > room) {
+        pending = pending.slice(0, room > 0 ? room : 0);
+        toast("A notice can have at most 6 images.");
+      }
       var uploadErr = null;
       for (var i = 0; i < pending.length && !uploadErr; i++) {
         try {
@@ -646,6 +653,10 @@
     $("#users-refresh").addEventListener("click", renderUsers);
     $("#notices-refresh").addEventListener("click", renderNotices);
     $("#notice-form").addEventListener("submit", saveNotice);
+    $("#notice-form").addEventListener("click", function (e) {
+      var rmImg = e.target.closest("[data-rmimg]");
+      if (rmImg) { removeNoticeImage(Number(rmImg.dataset.rmimg)); }
+    });
     $("#composer-cancel").addEventListener("click", resetComposer);
 
     $$(".chip[data-status]").forEach(function (chip) {
@@ -675,9 +686,7 @@
       var edit = e.target.closest("[data-edit]");
       if (edit) { startEdit(Number(edit.dataset.edit)); return; }
       var del = e.target.closest("[data-delete]");
-      if (del) { deleteNotice(Number(del.dataset.delete)); return; }
-      var rmImg = e.target.closest("[data-rmimg]");
-      if (rmImg) { removeNoticeImage(Number(rmImg.dataset.rmimg)); }
+      if (del) { deleteNotice(Number(del.dataset.delete)); }
     });
 
     if (state.token && state.user) showApp();
