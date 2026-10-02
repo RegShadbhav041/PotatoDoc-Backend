@@ -4,7 +4,7 @@ Read/unread state is per-farmer (notice_reads). The list itself is public —
 anonymous callers just don't get read flags. Admin CRUD lives in admin.py.
 No torch imports, same rationale as auth.py / history.py.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from auth import optional_user, require_user
 from db import NOTICE_CATEGORIES, connect
@@ -35,7 +35,8 @@ def list_notices(
     limit = max(1, min(limit, MAX_LIMIT))
     sql = (
         "SELECT n.id, n.category, n.title, n.body, n.author_name, "
-        "n.created_at, n.updated_at "
+        "n.created_at, n.updated_at, "
+        "(SELECT COUNT(*) FROM notice_images i WHERE i.notice_id = n.id) AS image_count "
         "FROM notices n WHERE n.status = 'published'"
     )
     args: list = []
@@ -70,12 +71,40 @@ def list_notices(
             "author_name": row["author_name"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+            "image_count": row["image_count"],
         }
         if user is not None:
             item["read"] = row["id"] in read_ids
         items.append(item)
 
     return {"items": items, "unread": unread if user is not None else 0}
+
+
+@router.get("/{notice_id}/images/{index}")
+def notice_image(notice_id: int, index: int):
+    """One picture of a published notice, by 0-based upload position.
+
+    Public like the feed itself. Selected with ORDER BY id + LIMIT/OFFSET, so
+    deleting an earlier image never breaks the URLs after it. Drafts are
+    invisible here, exactly like the feed.
+    """
+    if index < 0:
+        raise HTTPException(404, "Image not found.")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT i.data, i.mime FROM notice_images i "
+            "JOIN notices n ON n.id = i.notice_id "
+            "WHERE i.notice_id = ? AND n.status = 'published' "
+            "ORDER BY i.id LIMIT 1 OFFSET ?",
+            (notice_id, index),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Image not found.")
+    return Response(
+        content=row["data"],
+        media_type=row["mime"],
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/unread-count")
