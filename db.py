@@ -83,6 +83,13 @@ CREATE TABLE IF NOT EXISTS history_photos (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, item_id)
 );
+CREATE TABLE IF NOT EXISTS location_analysis (
+  lat_key    REAL NOT NULL,
+  lon_key    REAL NOT NULL,
+  payload    TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (lat_key, lon_key)
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notices_status ON notices(status, id DESC);

@@ -60,6 +60,7 @@ from history import router as history_router
 from notices import router as notices_router
 from tickets import router as tickets_router
 from admin import router as admin_router
+from location import router as location_router
 
 # Repo root = this file's directory; override with POTATO_BASE_DIR if relocated.
 BASE = Path(os.environ.get("POTATO_BASE_DIR", Path(__file__).resolve().parent))
@@ -192,6 +193,7 @@ app.include_router(history_router)
 app.include_router(notices_router)
 app.include_router(tickets_router)
 app.include_router(admin_router)
+app.include_router(location_router)
 
 # Superadmin web panel — plain static HTML/JS, no build step. Guarded so the
 # API still boots in a checkout that predates static/.
