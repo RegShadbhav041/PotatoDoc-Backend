@@ -1,4 +1,5 @@
 """Schema contract: profile photo column, notice gallery, new categories."""
+import test_helpers  # noqa: F401
 import sqlite3
 import unittest
 
