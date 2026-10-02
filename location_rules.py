@@ -176,8 +176,7 @@ def ph_score(ph):
 
 
 def soil_score(texture, ph):
-    # 0.6·texture + 0.4·pH, capped at 95 — soil never scores "perfect".
-    return min(95, round(0.6 * TEXTURE_SCORES.get(texture, 75) + 0.4 * ph_score(ph)))
+    return round(0.6 * TEXTURE_SCORES.get(texture, 75) + 0.4 * ph_score(ph))
 
 
 def heuristic_texture(alt):

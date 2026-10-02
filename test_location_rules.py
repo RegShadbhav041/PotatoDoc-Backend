@@ -96,7 +96,7 @@ class SoilTest(unittest.TestCase):
         self.assertEqual(ph_score(4.8), 65)
         self.assertEqual(ph_score(7.8), 40)
         self.assertEqual(ph_score(None), 75)
-        self.assertEqual(soil_score("Loam", 5.8), 95)
+        self.assertEqual(soil_score("Loam", 5.8), 97)  # 0.6*95 + 0.4*100, uncapped per spec
         self.assertEqual(soil_score("Sand", 4.8), round(0.6 * 70 + 0.4 * 65))
         self.assertEqual(soil_score("Clay", None), round(0.6 * 55 + 0.4 * 75))
 
