@@ -24,6 +24,7 @@ from history import router as history_router
 from notices import router as notices_router
 from tickets import router as tickets_router
 from admin import router as admin_router
+from location import router as location_router
 
 app = FastAPI()
 app.include_router(auth_router)
@@ -31,5 +32,6 @@ app.include_router(history_router)
 app.include_router(notices_router)
 app.include_router(tickets_router)
 app.include_router(admin_router)
+app.include_router(location_router)
 
 client = TestClient(app)
