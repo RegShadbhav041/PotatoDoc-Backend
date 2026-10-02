@@ -27,6 +27,8 @@ so it can be versioned and deployed independently.
 | `/auth/register` | POST | `{contact, name, password}` | **201** `{token, user:{id, name, contact, createdAt}}` |
 | `/auth/login` | POST | `{contact, password}` | **200** `{token, user}` |
 | `/auth/me` | GET | — | **200** `user` |
+| `/auth/me/photo` | POST | multipart `file` (≤5 MB) | **200** `user` with `photo` (base64 data-URI, 512px JPEG) |
+| `/auth/me/photo` | DELETE | — | **200** `user` with `photo: null` |
 | `/auth/logout` | POST | — | **204**, always idempotent (revokes the token, safe to repeat) |
 | `/history` | GET | — | **200** `{items:[…]}` newest first, max 50 |
 | `/history` | PUT | `{items:[…]}` | **200** `{upserted}` — **upsert-only**, never deletes absent ids |
@@ -37,6 +39,18 @@ Notes:
 - `imageUri` is stripped from every uploaded item — it is a device-local `file://` path.
 - Errors always carry a plain-string `detail` (e.g. `{"detail":"Incorrect password"}`).
 - Passwords are `hashlib.scrypt`; login is rate-limited to 10 failures per contact per 5 min.
+
+### Notices (feed + superadmin image galleries)
+
+Categories: `update` | `announcement` | `crop_alert` | `new_product` | `medicine`.
+
+| Endpoint | Method | Request | Response |
+|---|---|---|---|
+| `/notices` | GET | — | **200** `{items:[{..., image_count}], unread}` (public) |
+| `/notices/{id}/images/{index}` | GET | — | **200** image bytes, `Cache-Control: public, max-age=86400` (public; 404 for drafts/missing) |
+| `/admin/notices/{id}/images` | POST | multipart `file` | **201** notice with `image_count` (superadmin; max 6) |
+| `/admin/notices/{id}/images/{index}` | GET | — | **200** image bytes, any status (superadmin; panel preview) |
+| `/admin/notices/{id}/images/{index}` | DELETE | — | **204** (superadmin; index = public GET position) |
 
 ## Layout
 

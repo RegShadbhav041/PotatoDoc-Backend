@@ -16,11 +16,17 @@ Run:
   Deployed: EXPO_PUBLIC_API_URL=https://<cloud-run-url> in mobile/.env
 
 Notices + superadmin (additive; existing mobile contract above unchanged):
-  GET    /notices[?category=<update|announcement|crop_alert>] public -> {items, unread}
+  GET    /notices[?category=<update|announcement|crop_alert|new_product|medicine>] public -> {items:[..., image_count], unread}
+  GET    /notices/{id}/images/{index}  public -> image bytes (Cache-Control: public, max-age=86400)
   GET    /notices/unread-count  auth -> {unread}
   POST   /notices/{id}/read     auth -> {ok, unread}
   POST   /notices/read-all      auth -> {marked, unread}
+  POST   /auth/me/photo  auth multipart file -> user {..., photo: data-uri}   (max 5MB -> 512px JPEG)
+  DELETE /auth/me/photo  auth -> user {..., photo: null}
   /admin/*                      superadmin only -> 403 otherwise (admin.py)
+  POST   /admin/notices/{id}/images         superadmin multipart file -> notice {..., image_count} (max 6)
+  GET    /admin/notices/{id}/images/{index} superadmin -> image bytes (any status; panel preview)
+  DELETE /admin/notices/{id}/images/{index} superadmin -> 204
   Web panel: GET /admin/ (static/admin); account seeded from
   POTATO_SUPERADMIN_CONTACT + POTATO_SUPERADMIN_PASSWORD (see db.py).
 """
