@@ -11,7 +11,7 @@ COPY outputs_combined/ ./outputs_combined/
 COPY calibration/ ./calibration/
 COPY scripts/ ./scripts/
 COPY static/ ./static/
-COPY test_*.py ./
+# tests/ intentionally NOT shipped: the unit suite runs in CI/local only.
 
 # Cloud Run's filesystem is read-only outside /tmp, and the image is rebuilt
 # on every deploy — a database inside the image would be wiped each time.

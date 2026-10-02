@@ -82,7 +82,7 @@ outputs_combined/       3 x best.pt weights (~29 MB) + labels/config/metrics JSO
                         (combined PV + Irish training family: 100% PV test, 98.75% Irish test)
 calibration/           thresholds.json (entropy/probability gates)
 scripts/auth_smoke.sh  end-to-end curl check (register → me → history → logout)
-test_*.py              unit suite (24 tests)
+tests/               unit suite (unittest + stdlib only; run: python -m unittest discover -s tests)
 Dockerfile             CPU-only torch, listens on $PORT (8080 on Cloud Run)
 start_backend.ps1      uvicorn + free Cloudflare quick tunnel (Windows)
 ```
@@ -103,7 +103,7 @@ Env vars:
 ## Tests
 
 ```bash
-python3 -m unittest discover -p "test_*.py"     # 24 unit tests, ~4 s
+python3 -m unittest discover -s tests       # full unit suite, ~13 s (run from repo root)
 scripts/auth_smoke.sh http://127.0.0.1:8000     # end-to-end (server must be running)
 ```
 
