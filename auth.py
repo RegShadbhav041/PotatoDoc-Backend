@@ -146,7 +146,7 @@ def login(body: LoginIn):
 
     with connect() as conn:
         row = conn.execute(
-            "SELECT id, contact, display_name, role, password_hash FROM users WHERE contact = ?",
+            "SELECT id, contact, display_name, role, status, password_hash FROM users WHERE contact = ?",
             (contact,),
         ).fetchone()
 
@@ -156,6 +156,10 @@ def login(body: LoginIn):
         raise HTTPException(401, "Invalid credentials")
 
     _clear_failures(contact)
+    # Suspended accounts authenticate fine but get nowhere: 403 (not 401) so
+    # the UI can explain WHY, unlike a wrong password.
+    if row["status"] != "active":
+        raise HTTPException(403, "This account has been suspended. Contact support.")
     token, user = _issue_session(row["id"], row["contact"], row["display_name"], row["role"])
     return {"token": token, "user": user}
 
@@ -171,13 +175,16 @@ def _resolve_session(authorization):
 
     with connect() as conn:
         row = conn.execute(
-            "SELECT u.id, u.contact, u.display_name, u.role, s.expires_at "
+            "SELECT u.id, u.contact, u.display_name, u.role, u.status, s.expires_at "
             "FROM sessions s JOIN users u ON u.id = s.user_id "
             "WHERE s.token = ?",
             (token,),
         ).fetchone()
 
     if row is None:
+        return None
+    # Banned mid-session: the token dies immediately (401 -> app signs out).
+    if row["status"] != "active":
         return None
     if row["expires_at"] <= datetime.now(timezone.utc).isoformat():
         with connect() as conn:

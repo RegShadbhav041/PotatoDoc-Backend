@@ -52,6 +52,9 @@
         <button class="nav-item active" data-nav="dashboard">Dashboard</button>
         <button class="nav-item" data-nav="users">Users</button>
         <button class="nav-item" data-nav="notices">Notices</button>
+        <button class="nav-item" data-nav="tickets">
+          Tickets<span id="nav-tickets-badge" class="nav-badge hidden"></span>
+        </button>
         <button class="nav-item" data-nav="models">Models</button>
       </nav>
 
@@ -139,7 +142,11 @@
         <div class="panel">
           <div class="panel-head">
             <h2 id="ud-name">Farmer</h2>
-            <button class="btn btn-outline btn-sm" id="ud-back">← Back to farmers</button>
+            <div class="filters">
+              <span id="ud-status"></span>
+              <button class="btn btn-outline btn-sm hidden" id="ud-ban">Ban farmer</button>
+              <button class="btn btn-outline btn-sm" id="ud-back">← Back to farmers</button>
+            </div>
           </div>
           <p id="ud-meta" class="muted"></p>
           <div id="ud-cards" class="stats"></div>
@@ -155,7 +162,10 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-head"><h2>Diagnoses</h2></div>
+          <div class="panel-head">
+            <h2>Diagnoses</h2>
+            <span class="muted">Click a row for the full report</span>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -239,6 +249,45 @@
         </div>
       </section>
 
+      <!-- ---- Support tickets ---- -->
+      <section id="view-tickets" class="view hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Farmer tickets</h2>
+            <div class="filters">
+              <button class="chip active" data-tstatus="">All</button>
+              <button class="chip" data-tstatus="open">Open</button>
+              <button class="chip" data-tstatus="resolved">Resolved</button>
+              <button class="btn btn-outline btn-sm" id="tickets-refresh">Refresh</button>
+            </div>
+          </div>
+          <div id="tickets-list" class="notices-list">
+            <p class="muted">Loading…</p>
+          </div>
+        </div>
+
+        <div id="ticket-thread" class="panel hidden">
+          <div class="panel-head">
+            <h2 id="tk-subject">Ticket</h2>
+            <div class="filters">
+              <button class="btn btn-outline btn-sm" id="tk-toggle">Mark resolved</button>
+              <button class="btn btn-outline btn-sm" id="tk-back">← Back to tickets</button>
+            </div>
+          </div>
+          <p id="tk-meta" class="muted"></p>
+          <div id="tk-messages" class="chat">
+            <p class="muted">Loading…</p>
+          </div>
+          <form id="tk-reply-form" autocomplete="off">
+            <div class="form-actions">
+              <textarea id="tk-reply" rows="2" placeholder="Write a reply…"></textarea>
+              <button type="submit" class="btn btn-primary" id="tk-send">Send</button>
+            </div>
+            <span id="tk-msg" class="form-msg"></span>
+          </form>
+        </div>
+      </section>
+
       <!-- ---- Models ---- -->
       <section id="view-models" class="view hidden">
         <div class="panel">
@@ -274,6 +323,26 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- ============ DIAGNOSIS REPORT MODAL ============ -->
+  <div id="result-modal" class="modal hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rm-title">
+      <div class="modal-head">
+        <h2 id="rm-title">Diagnosis report</h2>
+        <button class="btn btn-outline btn-sm" id="rm-close">Close</button>
+      </div>
+      <div class="modal-body">
+        <div id="rm-photo" class="rm-photo"></div>
+        <div class="rm-side">
+          <div id="rm-verdict" class="rm-verdict"></div>
+          <p id="rm-meta" class="muted rm-meta"></p>
+          <div id="rm-loc" class="rm-loc"></div>
+          <div class="rm-probs-head">Class probabilities</div>
+          <div id="rm-probs" class="bars"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

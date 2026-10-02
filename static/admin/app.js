@@ -17,6 +17,8 @@
     editingId: null, // notice being edited
     search: "", // users filter (client side)
     userDetailId: null,
+    ticketStatus: "", // ticket filter: "" | open | resolved
+    ticketId: null, // thread open in the Tickets view
   };
 
   var $ = function (sel) { return document.querySelector(sel); };
@@ -176,6 +178,7 @@
     renderOverview();
     renderUsers();
     renderNotices();
+    renderTickets();
   }
 
   function signOut(callServer) {
@@ -231,6 +234,7 @@
     dashboard: "Dashboard",
     users: "Users",
     notices: "Notices",
+    tickets: "Tickets",
     models: "Models",
     "user-detail": "Farmer detail",
   };
@@ -247,6 +251,7 @@
     if (view === "dashboard") renderOverview();
     if (view === "users") renderUsers();
     if (view === "notices") renderNotices();
+    if (view === "tickets") renderTickets();
     if (view === "models") renderModels();
   }
 
@@ -351,17 +356,28 @@
         var isSelf = state.user && u.id === state.user.id;
         var next = u.role === "superadmin" ? "user" : "superadmin";
         var label = u.role === "superadmin" ? "Make farmer" : "Make superadmin";
+        var banned = u.status === "banned";
+        var statusBadge = '<span class="badge badge-' + (banned ? "banned" : "active") + '">' +
+          (banned ? "banned" : "active") + "</span>";
+        var banBtn = (u.role !== "superadmin" && !isSelf)
+          ? '<button class="btn btn-outline btn-sm" data-ban-id="' + u.id +
+            '" data-ban-next="' + (banned ? "active" : "banned") + '">' +
+            (banned ? "Unban" : "Ban") + "</button>"
+          : "";
         return "<tr>" +
-          '<td><button class="linklike" data-user="' + u.id + '">' + esc(u.name) + "</button>" +
+          "<td>" + avatarHtml(u.photo, u.name || u.contact) +
+          '<button class="linklike" data-user="' + u.id + '">' + esc(u.name) + "</button>" +
           (isSelf ? ' <span class="muted">(you)</span>' : "") + "</td>" +
           "<td>" + esc(u.contact) + "</td>" +
-          '<td><span class="badge badge-' + esc(u.role) + '">' + esc(u.role) + "</span></td>" +
+          '<td><span class="badge badge-' + esc(u.role) + '">' + esc(u.role) + "</span> " +
+          statusBadge + "</td>" +
           "<td>" + esc(u.history_count) + "</td>" +
           "<td>" + esc(fmtDate(u.last_diagnosis_at) || "—") + "</td>" +
           "<td>" + esc(fmtDate(u.created_at)) + "</td>" +
           '<td class="right"><div class="row-actions">' +
           '<button class="btn btn-outline btn-sm" data-role-id="' + u.id +
           '" data-role="' + next + '">' + label + "</button>" +
+          banBtn +
           "</div></td></tr>";
       }).join("");
     } catch (err) {
@@ -379,6 +395,24 @@
     }
   }
 
+  /** Ban / unban a farmer (PUT /admin/users/{id}/status). A ban revokes every
+   * live session server-side and blocks the token from then on. */
+  async function changeStatus(userId, status) {
+    try {
+      await api("/admin/users/" + userId + "/status", {
+        method: "PUT",
+        body: { status: status },
+      });
+      toast(status === "banned"
+        ? "Farmer banned — signed out everywhere"
+        : "Farmer unbanned — they can sign in again");
+      renderUsers();
+      if (state.userDetailId === userId) openUserDetail(userId);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
   /* ---------------- user detail (drill-down) ---------------- */
 
   async function openUserDetail(userId) {
@@ -387,10 +421,25 @@
     $("#ud-history-body").innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
     try {
       var u = await api("/admin/users/" + userId);
-      $("#ud-name").textContent = u.name || u.contact;
+      $("#ud-name").innerHTML =
+        avatarHtml(u.photo, u.name || u.contact, true) + esc(u.name || u.contact);
       $("#ud-meta").innerHTML = esc(u.contact) + " · " +
         '<span class="badge badge-' + esc(u.role) + '">' + esc(u.role) + "</span>" +
         " · joined " + esc(fmtDate(u.created_at));
+      var banned = u.status === "banned";
+      $("#ud-status").innerHTML =
+        '<span class="badge badge-' + (banned ? "banned" : "active") + '">' +
+        (banned ? "banned" : "active") + "</span>";
+      var banBtn = $("#ud-ban");
+      var isSelf = state.user && u.id === state.user.id;
+      if (u.role === "superadmin" || isSelf) {
+        banBtn.classList.add("hidden");
+      } else {
+        banBtn.classList.remove("hidden");
+        banBtn.textContent = banned ? "Unban farmer" : "Ban farmer";
+        banBtn.dataset.uid = String(u.id);
+        banBtn.dataset.next = banned ? "active" : "banned";
+      }
       $("#ud-cards").innerHTML = [
         ["Diagnoses", u.history_count],
         ["Sessions", u.session_count],
@@ -421,7 +470,8 @@
           var pct = it.confidence <= 1 ? it.confidence * 100 : it.confidence;
           conf = Math.round(pct) + "%";
         }
-        return "<tr><td>" + esc(it.class || "—") + "</td><td>" + esc(conf) +
+        return '<tr class="row-link" data-hid="' + esc(it.id) + '">' +
+          "<td>" + esc(it.class || "—") + "</td><td>" + esc(conf) +
           "</td><td>" + esc(it.model || "—") + "</td><td>" +
           (it.is_unknown ? "yes" : "no") + "</td><td>" +
           esc(fmtDate(it.timestamp || it.created_at)) + "</td></tr>";
@@ -594,6 +644,256 @@
     }
   }
 
+  /* ---------------- support tickets ---------------- */
+
+  var TK_STATUS_LABELS = { open: "Open", resolved: "Resolved" };
+
+  /** "Salina Kunwar" -> "SK" (fallback avatar when the farmer has no photo). */
+  function initialsOf(label) {
+    var src = String(label || "?").trim();
+    var parts = src.split(/\s+/);
+    var out = parts.length > 1 && parts[1]
+      ? parts[0][0] + parts[1][0]
+      : src.slice(0, 2);
+    return out.toUpperCase();
+  }
+
+  /** Farmer avatar: base64 photo from /admin/users, else an initials disc. */
+  function avatarHtml(photo, label, big) {
+    var size = big ? " avatar-lg" : "";
+    if (photo) {
+      return '<img class="avatar' + size + '" src="' + photo + '" alt="">';
+    }
+    return '<span class="avatar-empty' + size + '">' +
+      esc(initialsOf(label)) + "</span>";
+  }
+
+  async function renderTickets() {
+    var list = $("#tickets-list");
+    try {
+      var data = await api("/admin/tickets");
+      var all = data.items || [];
+      // Sidebar badge = open tickets (always computed from the full list).
+      var openCount = all.filter(function (t) { return t.status === "open"; }).length;
+      var badge = $("#nav-tickets-badge");
+      badge.textContent = String(openCount);
+      badge.classList.toggle("hidden", !openCount);
+
+      var items = state.ticketStatus
+        ? all.filter(function (t) { return t.status === state.ticketStatus; })
+        : all;
+      if (!items.length) {
+        list.innerHTML = '<p class="muted">' +
+          (state.ticketStatus
+            ? "No " + esc(state.ticketStatus) + " tickets."
+            : "No tickets yet — farmers open them from Profile → Help & Feedback.") +
+          "</p>";
+        return;
+      }
+      list.innerHTML = items.map(function (tk) {
+        var f = tk.farmer || {};
+        var preview = tk.last_body ? tk.last_body.slice(0, 110) : "";
+        return '<button class="list-row" data-ticket="' + tk.id + '">' +
+          "<span>" + avatarHtml(f.photo, f.name || f.contact) +
+          "<b>" + esc(tk.subject) + "</b>" +
+          '<small class="muted">' + esc(f.name || "—") + " · " + esc(f.contact || "") +
+          (preview ? " · " + esc(preview) + (tk.last_body.length > 110 ? "…" : "") : "") +
+          "</small></span>" +
+          '<span class="muted"><span class="badge badge-' + esc(tk.status) + '">' +
+          esc(TK_STATUS_LABELS[tk.status] || tk.status) + "</span><br>" +
+          esc(fmtDate(tk.updated_at)) + " · " + esc(tk.message_count) + " msg</span>" +
+          "</button>";
+      }).join("");
+    } catch (err) {
+      list.innerHTML = '<p class="muted">' + esc(err.message) + "</p>";
+    }
+  }
+
+  function renderTicketThread(tk) {
+    var f = tk.farmer || {};
+    $("#tk-subject").textContent = tk.subject;
+    $("#tk-meta").innerHTML =
+      avatarHtml(f.photo, f.name || f.contact, true) +
+      "<b>" + esc(f.name || "Farmer") + "</b> · " + esc(f.contact || "") +
+      ' <span class="badge badge-' + esc(tk.status) + '">' +
+      esc(TK_STATUS_LABELS[tk.status] || tk.status) + "</span>" +
+      " · opened " + esc(fmtDate(tk.created_at));
+    $("#tk-toggle").textContent =
+      tk.status === "resolved" ? "Reopen ticket" : "Mark resolved";
+
+    var box = $("#tk-messages");
+    if (!tk.messages || !tk.messages.length) {
+      box.innerHTML = '<p class="muted">No messages.</p>';
+      return;
+    }
+    box.innerHTML = tk.messages.map(function (m) {
+      var mine = m.from === "admin"; // "admin" = this panel speaking
+      return '<div class="chat-row' + (mine ? " mine" : "") + '">' +
+        '<div class="chat-bubble">' +
+        (mine ? "" : '<div class="chat-author">' + esc(m.author) + "</div>") +
+        esc(m.body) +
+        '<div class="chat-time">' + esc(fmtDate(m.created_at)) + "</div>" +
+        "</div></div>";
+    }).join("");
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function openTicket(id) {
+    state.ticketId = id;
+    $("#ticket-thread").classList.remove("hidden");
+    $("#tk-messages").innerHTML = '<p class="muted">Loading…</p>';
+    $("#tk-msg").textContent = "";
+    try {
+      var tk = await api("/admin/tickets/" + id);
+      renderTicketThread(tk);
+      $("#ticket-thread").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      $("#tk-messages").innerHTML = '<p class="muted">' + esc(err.message) + "</p>";
+    }
+  }
+
+  async function sendTicketReply(e) {
+    e.preventDefault();
+    var input = $("#tk-reply");
+    var msg = $("#tk-msg");
+    var body = input.value.trim();
+    msg.classList.remove("error");
+    if (!body) {
+      msg.textContent = "Write a reply first.";
+      msg.classList.add("error");
+      return;
+    }
+    var btn = $("#tk-send");
+    btn.disabled = true;
+    try {
+      var tk = await api("/admin/tickets/" + state.ticketId + "/messages", {
+        method: "POST",
+        body: { body: body },
+      });
+      input.value = "";
+      renderTicketThread(tk);
+      msg.textContent = "Reply sent — the farmer sees it in the app.";
+      renderTickets();
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.classList.add("error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function toggleTicketStatus() {
+    if (state.ticketId == null) return;
+    var resolving = $("#tk-toggle").textContent === "Mark resolved";
+    try {
+      var tk = await api("/admin/tickets/" + state.ticketId, {
+        method: "PUT",
+        body: { status: resolving ? "resolved" : "open" },
+      });
+      renderTicketThread(tk);
+      renderTickets();
+      toast(resolving ? "Ticket resolved" : "Ticket reopened");
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  /* ---------------- diagnosis report modal ---------------- */
+
+  var _resultPhotoUrl = null; // object URL of the current photo (revoked on close)
+
+  function closeResultModal() {
+    $("#result-modal").classList.add("hidden");
+    if (_resultPhotoUrl) { URL.revokeObjectURL(_resultPhotoUrl); _resultPhotoUrl = null; }
+  }
+
+  /** The farmer's own "PredictionResult" view, mirrored for the panel: the
+   * scanned photo, verdict + confidence, device time, GPS tag and the full
+   * per-class probability breakdown for one diagnosis. */
+  async function openResultModal(userId, itemId) {
+    var modal = $("#result-modal");
+    modal.classList.remove("hidden");
+    $("#rm-title").textContent = "Diagnosis report";
+    $("#rm-photo").innerHTML = '<span class="muted">Loading…</span>';
+    $("#rm-verdict").innerHTML = "";
+    $("#rm-meta").textContent = "";
+    $("#rm-loc").innerHTML = "";
+    $("#rm-probs").innerHTML = "";
+
+    try {
+      var h = await api("/admin/users/" + userId + "/history?limit=50");
+      var it = null;
+      (h.items || []).forEach(function (x) {
+        if (String(x.id) === String(itemId)) it = x;
+      });
+      if (!it) throw new Error("This diagnosis no longer exists.");
+
+      $("#rm-title").textContent = "Diagnosis · " + (it.class || "unknown");
+
+      // Photo — fetched with the bearer token (a bare <img> cannot send it).
+      if (it.has_photo) {
+        try {
+          _resultPhotoUrl = await imageUrl("/admin/users/" + userId + "/history/" +
+            encodeURIComponent(itemId) + "/photo");
+          $("#rm-photo").innerHTML =
+            '<img src="' + _resultPhotoUrl + '" alt="Scanned leaf">';
+        } catch (e) {
+          $("#rm-photo").innerHTML = '<span class="muted">Photo unavailable</span>';
+        }
+      } else {
+        $("#rm-photo").innerHTML =
+          '<span class="muted">No photo stored for this scan</span>';
+      }
+
+      // Verdict + confidence + model.
+      var conf = "";
+      if (it.confidence != null) {
+        var pct = it.confidence <= 1 ? it.confidence * 100 : it.confidence;
+        conf = Math.round(pct) + "%";
+      }
+      $("#rm-verdict").innerHTML =
+        '<div class="rm-class">' + esc(it.class || "Unknown") + "</div>" +
+        '<span class="rm-conf">' + esc(conf || "—") + "</span>" +
+        (it.is_unknown ? ' <span class="badge badge-draft">unrecognised</span>' : "") +
+        (it.model ? ' <span class="badge badge-superadmin">' + esc(it.model) + "</span>" : "");
+
+      // When: the device timestamp (when the photo was taken) + when saved.
+      $("#rm-meta").textContent =
+        "Taken " + (fmtDate(it.timestamp) || "—") +
+        (it.created_at ? " · saved " + fmtDate(it.created_at) : "");
+
+      // Where: GPS tag captured at diagnosis time, if any.
+      var loc = it.location;
+      $("#rm-loc").innerHTML = loc && loc.latitude != null && loc.longitude != null
+        ? '<span class="badge badge-open">📍 ' + Number(loc.latitude).toFixed(5) +
+          ", " + Number(loc.longitude).toFixed(5) + "</span>" +
+          (loc.locality ? ' <span class="muted">' + esc(loc.locality) + "</span>" : "") +
+          (loc.accuracy_m != null ? ' <span class="muted">±' +
+            Math.round(loc.accuracy_m) + " m</span>" : "")
+        : '<span class="muted">No location tag</span>';
+
+      // Full probability breakdown, sorted high → low.
+      var probs = it.probabilities;
+      if (probs && typeof probs === "object") {
+        var entries = Object.keys(probs).map(function (k) { return [k, probs[k]]; });
+        entries.sort(function (a, b) { return b[1] - a[1]; });
+        $("#rm-probs").innerHTML = entries.map(function (e) {
+          var v = e[1];
+          var p = v <= 1 ? v * 100 : v;
+          return '<div class="bar-row">' +
+            '<span class="bar-label">' + esc(e[0]) + "</span>" +
+            '<span class="bar-track"><span class="bar-fill" style="width:' +
+            Math.max(2, Math.round(p)) + '%"></span></span>' +
+            '<span class="bar-count">' + p.toFixed(1) + "%</span></div>";
+        }).join("");
+      } else {
+        $("#rm-probs").innerHTML = '<p class="muted">No probability data stored.</p>';
+      }
+    } catch (err) {
+      $("#rm-verdict").innerHTML = '<p class="muted">' + esc(err.message) + "</p>";
+    }
+  }
+
   /* ---------------- models ---------------- */
 
   async function renderModels() {
@@ -678,8 +978,31 @@
     $("#users-body").addEventListener("click", function (e) {
       var farmer = e.target.closest("[data-user]");
       if (farmer) { openUserDetail(Number(farmer.dataset.user)); return; }
+      var ban = e.target.closest("[data-ban-id]");
+      if (ban) { changeStatus(Number(ban.dataset.banId), ban.dataset.banNext); return; }
       var btn = e.target.closest("[data-role-id]");
       if (btn) changeRole(Number(btn.dataset.roleId), btn.dataset.role);
+    });
+
+    $("#ud-ban").addEventListener("click", function () {
+      var el = $("#ud-ban");
+      if (el.dataset.uid) changeStatus(Number(el.dataset.uid), el.dataset.next);
+    });
+    $("#ud-history-body").addEventListener("click", function (e) {
+      var row = e.target.closest("[data-hid]");
+      if (row && state.userDetailId != null) {
+        openResultModal(state.userDetailId, row.dataset.hid);
+      }
+    });
+
+    $("#rm-close").addEventListener("click", closeResultModal);
+    $("#result-modal").addEventListener("click", function (e) {
+      if (e.target === $("#result-modal")) closeResultModal(); // backdrop
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !$("#result-modal").classList.contains("hidden")) {
+        closeResultModal();
+      }
     });
 
     $("#notices-list").addEventListener("click", function (e) {
@@ -687,6 +1010,28 @@
       if (edit) { startEdit(Number(edit.dataset.edit)); return; }
       var del = e.target.closest("[data-delete]");
       if (del) { deleteNotice(Number(del.dataset.delete)); }
+    });
+
+    $("#tickets-refresh").addEventListener("click", renderTickets);
+    $("#tk-reply-form").addEventListener("submit", sendTicketReply);
+    $("#tk-toggle").addEventListener("click", toggleTicketStatus);
+    $("#tk-back").addEventListener("click", function () {
+      state.ticketId = null;
+      $("#ticket-thread").classList.add("hidden");
+      renderTickets();
+    });
+    $("#tickets-list").addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-ticket]");
+      if (btn) openTicket(Number(btn.dataset.ticket));
+    });
+    $$(".chip[data-tstatus]").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        state.ticketStatus = chip.dataset.tstatus;
+        $$(".chip[data-tstatus]").forEach(function (c) {
+          c.classList.toggle("active", c === chip);
+        });
+        renderTickets();
+      });
     });
 
     if (state.token && state.user) showApp();

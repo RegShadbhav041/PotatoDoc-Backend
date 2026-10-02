@@ -508,3 +508,102 @@ button.list-row:hover { background: var(--green-soft); }
   white-space: pre-wrap; word-break: break-word; margin: 0;
 }
 .cat-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---- support tickets (sidebar badge, status chips, thread) ---- */
+.nav-badge {
+  display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 7px;
+  border-radius: 999px; background: var(--danger); color: #fff;
+  font-size: 11px; font-weight: 800; text-align: center; line-height: 1.5;
+}
+.badge-open { background: var(--green-soft); border-color: var(--green-line); color: var(--green-dark); }
+.badge-resolved { background: var(--line); border-color: var(--line); color: var(--gray); }
+
+/* farmer profile photos: users table, drill-down, ticket rows */
+.avatar {
+  width: 26px; height: 26px; border-radius: 50%; object-fit: cover;
+  vertical-align: middle; margin-right: 8px; border: 1px solid var(--line);
+  background: var(--green-soft);
+}
+.avatar-empty {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; margin-right: 8px;
+  background: var(--green-soft); color: var(--green-dark);
+  font-size: 11px; font-weight: 800; vertical-align: middle;
+}
+.avatar-lg, .avatar-empty.avatar-lg { width: 44px; height: 44px; font-size: 15px; }
+#ud-name .avatar-lg, #ud-name .avatar-empty.avatar-lg { margin-right: 12px; }
+
+/* ticket thread: two-way chat bubbles */
+.chat {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 14px 0 12px; max-height: 420px; overflow-y: auto; padding-right: 4px;
+}
+.chat-row { display: flex; }
+.chat-row.mine { justify-content: flex-end; }
+.chat-bubble {
+  max-width: 72%; padding: 9px 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--card); font-size: 14px; line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word;
+}
+.chat-row.mine .chat-bubble { background: var(--green-soft); border-color: var(--green-line); }
+.chat-author { font-size: 11.5px; font-weight: 800; color: var(--gray); margin-bottom: 3px; }
+.chat-time { font-size: 11px; color: var(--gray); margin-top: 4px; text-align: right; }
+#tk-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+#tk-reply-form textarea {
+  flex: 1; min-width: 220px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; font: inherit; font-size: 14px; resize: vertical;
+}
+
+/* ---- account status (ban/unban) ---- */
+.badge-active { background: var(--green-soft); border-color: var(--green-line); color: var(--green-dark); }
+.badge-banned { background: #fdecea; border-color: #f5c6c0; color: var(--danger); }
+
+/* ---- diagnosis report modal ---- */
+.modal {
+  position: fixed; inset: 0; z-index: 60; display: flex;
+  align-items: center; justify-content: center; padding: 24px;
+  background: rgba(17, 24, 20, 0.55);
+}
+.modal-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  width: min(760px, 100%); max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { margin: 0; font-size: 16px; }
+.modal-body {
+  display: grid; grid-template-columns: minmax(220px, 44%) 1fr;
+  gap: 18px; padding: 18px; overflow-y: auto;
+}
+.rm-photo {
+  background: var(--page); border: 1px solid var(--line); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 180px; overflow: hidden; text-align: center; padding: 8px;
+}
+.rm-photo img {
+  display: block; width: 100%; height: auto; max-height: 340px;
+  object-fit: contain; border-radius: 8px;
+}
+.rm-verdict { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.rm-class { font-size: 20px; font-weight: 800; width: 100%; }
+.rm-conf {
+  font-size: 15px; font-weight: 800; color: var(--green-dark);
+  background: var(--green-soft); border: 1px solid var(--green-line);
+  border-radius: 8px; padding: 2px 9px;
+}
+.rm-meta { margin: 8px 0 6px; }
+.rm-loc { margin-bottom: 12px; }
+.rm-probs-head {
+  font-size: 12px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--gray); margin-bottom: 6px;
+}
+#rm-probs .bar-row { grid-template-columns: minmax(90px, 45%) 1fr 56px; }
+@media (max-width: 640px) {
+  .modal-body { grid-template-columns: 1fr; }
+}
+tr.row-link { cursor: pointer; }
+tr.row-link:hover { background: var(--green-soft); }

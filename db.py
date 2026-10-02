@@ -60,10 +60,36 @@ CREATE TABLE IF NOT EXISTS notice_images (
   mime       TEXT NOT NULL DEFAULT 'image/jpeg',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS tickets (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject    TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ticket_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS history_photos (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  item_id    TEXT NOT NULL,
+  data       BLOB NOT NULL,
+  mime       TEXT NOT NULL DEFAULT 'image/jpeg',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, item_id)
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notices_status ON notices(status, id DESC);
 CREATE INDEX IF NOT EXISTS idx_notice_images_notice ON notice_images(notice_id, id);
+CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket ON ticket_messages(ticket_id, id);
 """
 
 # Keep the schema string pure SQL (executescript ignores nothing) — the
@@ -71,6 +97,8 @@ CREATE INDEX IF NOT EXISTS idx_notice_images_notice ON notice_images(notice_id, 
 NOTICE_CATEGORIES = ("update", "announcement", "crop_alert", "new_product", "medicine")
 NOTICE_STATUSES = ("draft", "published")
 ROLES = ("user", "superadmin")
+TICKET_STATUSES = ("open", "resolved")
+ACCOUNT_STATUSES = ("active", "banned")
 
 
 def connect():
@@ -101,6 +129,8 @@ def _migrate(conn):
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
     if "photo" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN photo BLOB")
+    if "status" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
 
 
 def _seed_superadmin():
