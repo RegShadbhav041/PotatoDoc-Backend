@@ -1,13 +1,20 @@
-"""Superadmin API: platform stats, farmer accounts and notice CRUD.
+"""Superadmin API: platform stats, farmer accounts, notices and tickets.
 
 Every route requires the superadmin role (see auth.require_superadmin).
 Served to the static web panel at /admin; no torch imports.
 
 Beyond the CRUD the panel also needs read-only reporting:
   GET /admin/overview              dashboard totals, 7-day trends, class/model mix
-  GET /admin/users/{id}            one farmer's profile + activity aggregates
+  GET /admin/users/{id}            one farmer's profile + photo + activity aggregates
   GET /admin/users/{id}/history    that farmer's diagnoses (payload parsed)
   GET /admin/models                model inventory + weights + metrics
+
+Support tickets — the superadmin half of the two-way chat (farmer half in
+tickets.py); every response includes full message threads:
+  GET   /admin/tickets[?status=<open|resolved>]  all tickets + farmer identity
+  GET   /admin/tickets/{id}                     thread + farmer profile (photo)
+  POST  /admin/tickets/{id}/messages            reply (keeps current status)
+  PUT   /admin/tickets/{id}                     {status: open|resolved}
 """
 import json
 import os
@@ -18,8 +25,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, File, UploadFil
 from pydantic import BaseModel
 
 from auth import require_superadmin
-from db import NOTICE_CATEGORIES, NOTICE_STATUSES, ROLES, connect
-from media import normalise
+from db import ACCOUNT_STATUSES, NOTICE_CATEGORIES, NOTICE_STATUSES, ROLES, TICKET_STATUSES, connect
+from media import normalise, to_data_uri
+from tickets import TICKET_LIST_SQL, load_messages, ticket_fields, validate_body
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -92,7 +100,7 @@ def stats(admin: dict = Depends(require_superadmin)):
 def list_users(admin: dict = Depends(require_superadmin)):
     with connect() as conn:
         rows = conn.execute(
-            "SELECT u.id, u.contact, u.display_name, u.role, u.created_at, "
+            "SELECT u.id, u.contact, u.display_name, u.role, u.status, u.created_at, u.photo, "
             "  (SELECT COUNT(*) FROM history h WHERE h.user_id = u.id) AS history_count, "
             "  (SELECT MAX(h.updated_at) FROM history h WHERE h.user_id = u.id) AS last_diagnosis_at, "
             "  (SELECT MAX(s.created_at) FROM sessions s WHERE s.user_id = u.id) AS last_session_at "
@@ -105,7 +113,10 @@ def list_users(admin: dict = Depends(require_superadmin)):
                 "contact": row["contact"],
                 "name": row["display_name"],
                 "role": row["role"],
+                "status": row["status"],
                 "created_at": row["created_at"],
+                # Panel avatars: the same base64 data-URI the app shows, or null.
+                "photo": to_data_uri(row["photo"]) if row["photo"] else None,
                 "history_count": row["history_count"],
                 "last_diagnosis_at": row["last_diagnosis_at"],
                 "last_session_at": row["last_session_at"],
@@ -127,6 +138,32 @@ def change_role(user_id: int, body: RoleIn, admin: dict = Depends(require_supera
             raise HTTPException(404, "User not found.")
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, user_id))
     return {"ok": True, "id": user_id, "role": body.role}
+
+
+class StatusIn(BaseModel):
+    status: str = ""
+
+
+@router.put("/users/{user_id}/status")
+def change_status(user_id: int, body: StatusIn, admin: dict = Depends(require_superadmin)):
+    """Ban / unban a farmer. Banning revokes every live session at once, and
+    banned tokens are rejected from then on (auth._resolve_session)."""
+    if body.status not in ACCOUNT_STATUSES:
+        raise HTTPException(422, "Unknown status.")
+    if user_id == admin["id"]:
+        raise HTTPException(400, "You cannot ban your own account.")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, role FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "User not found.")
+        if row["role"] == "superadmin":
+            raise HTTPException(400, "Superadmin accounts cannot be banned.")
+        conn.execute("UPDATE users SET status = ? WHERE id = ?", (body.status, user_id))
+        if body.status == "banned":
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    return {"ok": True, "id": user_id, "status": body.status}
 
 
 @router.get("/notices")
@@ -276,6 +313,125 @@ def admin_notice_image(
     if row is None:
         raise HTTPException(404, "Image not found.")
     return Response(content=row["data"], media_type=row["mime"])
+
+
+# ---------------------------------------------------------------------------
+# Support tickets — superadmin half of the two-way chat (farmer half:
+# tickets.py). Threads include full message history on every response.
+# ---------------------------------------------------------------------------
+
+class TicketStatusIn(BaseModel):
+    status: str = ""
+
+
+class TicketMessageIn(BaseModel):
+    body: str = ""
+
+
+def _admin_ticket_detail(ticket_id: int) -> dict:
+    """Any farmer's ticket + thread + the farmer's identity (photo included)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT t.*, u.display_name AS farmer_name, u.contact AS farmer_contact, "
+            " u.photo AS farmer_photo "
+            "FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?",
+            (ticket_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Ticket not found.")
+        messages = load_messages(conn, ticket_id, row["user_id"])
+    fields = ticket_fields(row)
+    fields["message_count"] = len(messages)
+    fields["last_body"] = messages[-1]["body"] if messages else None
+    return {
+        **fields,
+        "farmer": {
+            "id": row["user_id"],
+            "name": row["farmer_name"],
+            "contact": row["farmer_contact"],
+            "photo": to_data_uri(row["farmer_photo"]) if row["farmer_photo"] else None,
+        },
+        "messages": messages,
+    }
+
+
+@router.get("/tickets")
+def list_all_tickets(status: str = "", admin: dict = Depends(require_superadmin)):
+    """Every ticket, newest activity first, with the farmer's identity."""
+    sql = (
+        "SELECT t.*, u.display_name AS farmer_name, u.contact AS farmer_contact, "
+        " (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id) AS message_count, "
+        " (SELECT m.body FROM ticket_messages m WHERE m.ticket_id = t.id "
+        "  ORDER BY m.id DESC LIMIT 1) AS last_body "
+        "FROM tickets t JOIN users u ON u.id = t.user_id"
+    )
+    args: list = []
+    if status:
+        if status not in TICKET_STATUSES:
+            raise HTTPException(422, "Unknown status.")
+        sql += " WHERE t.status = ?"
+        args.append(status)
+    sql += " ORDER BY t.updated_at DESC, t.id DESC"
+    with connect() as conn:
+        rows = conn.execute(sql, args).fetchall()
+    items = []
+    for row in rows:
+        item = ticket_fields(row)
+        item["farmer"] = {
+            "id": row["user_id"],
+            "name": row["farmer_name"],
+            "contact": row["farmer_contact"],
+        }
+        items.append(item)
+    return {"items": items}
+
+
+@router.get("/tickets/{ticket_id}")
+def admin_ticket_detail(ticket_id: int, admin: dict = Depends(require_superadmin)):
+    return _admin_ticket_detail(ticket_id)
+
+
+@router.post("/tickets/{ticket_id}/messages", status_code=201)
+def admin_reply(
+    ticket_id: int,
+    body: TicketMessageIn,
+    admin: dict = Depends(require_superadmin),
+):
+    """Reply as the superadmin. Status is untouched — resolve explicitly."""
+    text = validate_body(body.body)
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Ticket not found.")
+        conn.execute(
+            "INSERT INTO ticket_messages (ticket_id, user_id, body) VALUES (?, ?, ?)",
+            (ticket_id, admin["id"], text),
+        )
+        conn.execute(
+            "UPDATE tickets SET updated_at = datetime('now') WHERE id = ?",
+            (ticket_id,),
+        )
+    return _admin_ticket_detail(ticket_id)
+
+
+@router.put("/tickets/{ticket_id}")
+def set_ticket_status(
+    ticket_id: int,
+    body: TicketStatusIn,
+    admin: dict = Depends(require_superadmin),
+):
+    if body.status not in TICKET_STATUSES:
+        raise HTTPException(422, "Unknown status.")
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE tickets SET status = ?, updated_at = datetime('now') WHERE id = ?",
+            (body.status, ticket_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Ticket not found.")
+    return _admin_ticket_detail(ticket_id)
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +621,7 @@ def user_detail(user_id: int, admin: dict = Depends(require_superadmin)):
     """One farmer's profile plus activity aggregates (dashboard drill-down)."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT id, contact, display_name, role, created_at FROM users WHERE id = ?",
+            "SELECT id, contact, display_name, role, status, created_at, photo FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
         if row is None:
@@ -495,7 +651,9 @@ def user_detail(user_id: int, admin: dict = Depends(require_superadmin)):
         "contact": row["contact"],
         "name": row["display_name"],
         "role": row["role"],
+        "status": row["status"],
         "created_at": row["created_at"],
+        "photo": to_data_uri(row["photo"]) if row["photo"] else None,
         "history_count": history_count,
         "session_count": session_count,
         "notices_read": notices_read,
@@ -514,7 +672,9 @@ def user_history(
 ):
     """A farmer's diagnoses, newest first, with the payload parsed.
 
-    Only display fields are returned — payloads can embed big probability maps.
+    Returns exactly what the panel's detail modal renders: verdict, where and
+    when it was taken, per-class probabilities and whether a review photo is
+    stored (fetched separately from /history/{id}/photo).
     """
     limit = max(1, min(limit, 50))
     with connect() as conn:
@@ -526,6 +686,13 @@ def user_history(
             "WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?",
             (user_id, limit),
         ).fetchall()
+        photo_ids = {
+            r["item_id"]
+            for r in conn.execute(
+                "SELECT item_id FROM history_photos WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        }
 
     items = []
     for r in rows:
@@ -540,7 +707,32 @@ def user_history(
             "model": payload.get("model"),
             "is_unknown": payload.get("is_unknown"),
             "timestamp": payload.get("timestamp"),
+            "location": payload.get("location"),
+            "probabilities": payload.get("probabilities"),
+            "has_photo": str(r["id"]) in photo_ids,
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
         })
     return {"items": items, "count": len(items)}
+
+
+@router.get("/users/{user_id}/history/{item_id}/photo")
+def admin_history_photo(
+    user_id: int,
+    item_id: str,
+    admin: dict = Depends(require_superadmin),
+):
+    """The photo the farmer scanned for one diagnosis — superadmin-only, so
+    the panel can review submissions (and act on junk uploads)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT data, mime FROM history_photos WHERE user_id = ? AND item_id = ?",
+            (user_id, str(item_id)),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Photo not found.")
+    return Response(
+        content=row["data"],
+        media_type=row["mime"],
+        headers={"Cache-Control": "private, max-age=3600"},
+    )

@@ -34,6 +34,24 @@ so it can be versioned and deployed independently.
 | `/history` | PUT | `{items:[…]}` | **200** `{upserted}` — **upsert-only**, never deletes absent ids |
 | `/history` | DELETE | — | **204** — the only path that clears the server copy |
 
+### Support tickets (two-way chat, bearer token required)
+
+| Endpoint | Method | Request | Response |
+|---|---|---|---|
+| `/tickets` | POST | `{subject, message}` | **201** `ticket` — opens a ticket, `message` is the first entry |
+| `/tickets` | GET | — | **200** `{items:[…]}` own tickets, newest activity first |
+| `/tickets/{id}` | GET | — | **200** `ticket` + `messages` (owner only; **404** otherwise) |
+| `/tickets/{id}/messages` | POST | `{body}` | **201** `ticket` + `messages`; **reopens** a resolved ticket |
+| `/admin/tickets` | GET | `?status=open\|resolved` | **200** `{items:[…]}` all tickets + farmer identity |
+| `/admin/tickets/{id}` | GET | — | **200** thread + `farmer {id,name,contact,photo}` |
+| `/admin/tickets/{id}/messages` | POST | `{body}` | **201** reply (status unchanged — resolve explicitly) |
+| `/admin/tickets/{id}` | PUT | `{status}` | **200** `open` or `resolved` |
+
+Ticket fields: `id, subject, status(open\|resolved), created_at, updated_at, message_count, last_body`;
+messages: `{id, body, created_at, author, from: farmer\|admin}`. Subject ≤ 200 chars, body ≤ 4000.
+Superadmin routes ride the same 401/403 guard as the rest of `/admin/*`.
+`GET /admin/users[/{id}]` now also returns the farmer's `photo` as a data-URI (or `null`).
+
 Notes:
 - `contact` is an unverified plain string (email **or** phone), not a login identity check.
 - `imageUri` is stripped from every uploaded item — it is a device-local `file://` path.

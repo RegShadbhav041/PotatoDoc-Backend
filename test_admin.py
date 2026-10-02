@@ -65,6 +65,12 @@ class GuardTest(unittest.TestCase):
             client.get("/admin/models", headers=admin_headers),
             client.get("/admin/users", headers=admin_headers),
             client.get("/admin/notices", headers=admin_headers),
+            client.get("/admin/tickets", headers=admin_headers),
+            client.put(
+                f"/admin/users/{self.farmer_id}/status",
+                json={"status": "active"},
+                headers=admin_headers,
+            ),
             client.post(
                 "/admin/notices",
                 json={"title": "x", "category": "update", "status": "draft"},
@@ -337,8 +343,10 @@ class ReportingTest(unittest.TestCase):
         self.assertEqual(item["model"], "Ensemble (All Models)")
         self.assertEqual(item["timestamp"], "10/1/2026, 1:04 PM")
         self.assertIsNotNone(item["updated_at"])
-        # Bulk payload fields are not shipped to the panel.
-        self.assertNotIn("probabilities", item)
+        # The small per-class map ships (the review modal renders its bars);
+        # bulk fields like imageUri never do.
+        self.assertEqual(item["probabilities"], {"Late Blight": 0.63, "Healthy": 0.37})
+        self.assertNotIn("imageUri", item)
 
         self.assertEqual(
             client.get(
@@ -487,6 +495,205 @@ class NoticeImageTest(unittest.TestCase):
             res = create_notice(self.admin, category=category, title=f"Cat {category}")
             self.assertEqual(res.status_code, 201, res.text)
             self.assertEqual(res.json()["category"], category)
+
+
+class UserPhotoTest(unittest.TestCase):
+    """The panel can see farmers' profile pictures (list + drill-down)."""
+
+    def setUp(self):
+        auth._attempt_log.clear()
+        self.admin, self.admin_id = make_superadmin()
+        self.farmer, self.farmer_id = sign_up()
+
+    def _upload_photo(self):
+        return client.post(
+            "/auth/me/photo",
+            files={"file": ("me.png", _png(), "image/png")},
+            headers=self.farmer,
+        )
+
+    def test_user_detail_returns_the_photo_as_a_data_uri(self):
+        self.assertEqual(self._upload_photo().status_code, 200)
+        body = client.get(f"/admin/users/{self.farmer_id}", headers=self.admin).json()
+        self.assertTrue(body["photo"].startswith("data:image/jpeg;base64,"))
+
+    def test_user_list_includes_the_photo_for_panel_avatars(self):
+        self._upload_photo()
+        items = client.get("/admin/users", headers=self.admin).json()["items"]
+        me = next(u for u in items if u["id"] == self.farmer_id)
+        self.assertTrue(me["photo"].startswith("data:image/jpeg;base64,"))
+
+    def test_users_without_a_photo_get_null(self):
+        body = client.get(f"/admin/users/{self.farmer_id}", headers=self.admin).json()
+        self.assertIsNone(body["photo"])
+
+    def test_user_photo_views_stay_guarded(self):
+        self.assertEqual(client.get(f"/admin/users/{self.farmer_id}").status_code, 401)
+        self.assertEqual(client.get("/admin/users").status_code, 401)
+        self.assertEqual(
+            client.get(f"/admin/users/{self.farmer_id}", headers=self.farmer).status_code,
+            403,
+        )
+
+
+class BanTest(unittest.TestCase):
+    """Junk uploads -> the superadmin bans the account everywhere at once."""
+
+    def setUp(self):
+        auth._attempt_log.clear()
+        self.admin, self.admin_id = make_superadmin()
+        self.farmer, self.farmer_id = sign_up()
+
+    def _login(self, contact="", password="potato1234"):
+        # sign_up() registers with a unique contact — read it back for login.
+        items = client.get("/admin/users", headers=self.admin).json()["items"]
+        row = next(u for u in items if u["id"] == self.farmer_id)
+        return client.post(
+            "/auth/login", json={"contact": contact or row["contact"], "password": password}
+        )
+
+    def _ban(self, status="banned"):
+        return client.put(
+            f"/admin/users/{self.farmer_id}/status",
+            json={"status": status},
+            headers=self.admin,
+        )
+
+    def test_ban_blocks_login_and_kills_live_sessions(self):
+        # Live token works before the ban.
+        self.assertEqual(client.get("/auth/me", headers=self.farmer).status_code, 200)
+
+        res = self._ban()
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["status"], "banned")
+
+        # Existing token dies immediately (session revoked + status check).
+        self.assertEqual(client.get("/auth/me", headers=self.farmer).status_code, 401)
+        # Fresh login explains why (403, not a generic 401).
+        login = self._login()
+        self.assertEqual(login.status_code, 403)
+        self.assertIn("suspended", login.json()["detail"])
+
+    def test_unban_restores_access(self):
+        self._ban()
+        self.assertEqual(self._ban("active").status_code, 200)
+        self.assertEqual(self._login().status_code, 200)
+
+    def test_status_and_role_are_exposed_to_the_panel(self):
+        self._ban()
+        listed = next(
+            u for u in client.get("/admin/users", headers=self.admin).json()["items"]
+            if u["id"] == self.farmer_id
+        )
+        self.assertEqual(listed["status"], "banned")
+        detail = client.get(f"/admin/users/{self.farmer_id}", headers=self.admin).json()
+        self.assertEqual(detail["status"], "banned")
+
+    def test_banning_is_guarded_and_validated(self):
+        self.assertEqual(
+            client.put(f"/admin/users/{self.farmer_id}/status", json={"status": "banned"}).status_code,
+            401,
+        )
+        self.assertEqual(
+            client.put(
+                f"/admin/users/{self.farmer_id}/status",
+                json={"status": "banned"},
+                headers=self.farmer,
+            ).status_code,
+            403,
+        )
+        self.assertEqual(self._ban("shadowban").status_code, 422)
+        self.assertEqual(
+            client.put(
+                "/admin/users/999999/status",
+                json={"status": "banned"},
+                headers=self.admin,
+            ).status_code,
+            404,
+        )
+        # No self-lockout, no locking out the superadmin role.
+        self.assertEqual(
+            client.put(
+                f"/admin/users/{self.admin_id}/status",
+                json={"status": "banned"},
+                headers=self.admin,
+            ).status_code,
+            400,
+        )
+
+
+class FarmerResultReviewTest(unittest.TestCase):
+    """The panel sees what a farmer actually scanned: verdict, where/when,
+    probabilities and the stored photo."""
+
+    def setUp(self):
+        auth._attempt_log.clear()
+        self.admin, self.admin_id = make_superadmin()
+        self.farmer, self.farmer_id = sign_up()
+        self.item = {
+            "id": "1700000000099",
+            "class": "Late Blight",
+            "confidence": 0.87,
+            "model": "Ensemble (All Models)",
+            "is_unknown": False,
+            "timestamp": "2/10/2026, 3:00 PM",
+            "probabilities": {"Late Blight": 0.87, "Healthy": 0.13},
+            "location": {"lat": 28.2, "lon": 83.9, "label": "Field A"},
+        }
+        client.put("/history", json={"items": [self.item]}, headers=self.farmer)
+        self.png = {
+            "file": ("leaf.png", _png(), "image/png")
+        }
+
+    def _photo_url(self):
+        return f"/admin/users/{self.farmer_id}/history/{self.item['id']}/photo"
+
+    def test_history_rows_carry_location_probabilities_and_photo_flag(self):
+        client.post(
+            f"/history/{self.item['id']}/photo", files=self.png, headers=self.farmer
+        )
+        rows = client.get(
+            f"/admin/users/{self.farmer_id}/history", headers=self.admin
+        ).json()["items"]
+        row = rows[0]
+        self.assertEqual(row["class"], "Late Blight")
+        self.assertEqual(row["confidence"], 0.87)
+        self.assertEqual(row["location"]["label"], "Field A")
+        self.assertEqual(row["probabilities"]["Healthy"], 0.13)
+        self.assertTrue(row["has_photo"])
+        self.assertEqual(row["timestamp"], "2/10/2026, 3:00 PM")
+
+    def test_admin_fetches_the_scanned_photo_as_jpeg(self):
+        client.post(
+            f"/history/{self.item['id']}/photo", files=self.png, headers=self.farmer
+        )
+        res = client.get(self._photo_url(), headers=self.admin)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers["content-type"], "image/jpeg")
+        self.assertTrue(res.content.startswith(b"\xff\xd8"))
+
+    def test_photo_review_routes_are_guarded(self):
+        client.post(
+            f"/history/{self.item['id']}/photo", files=self.png, headers=self.farmer
+        )
+        self.assertEqual(client.get(self._photo_url()).status_code, 401)
+        self.assertEqual(
+            client.get(self._photo_url(), headers=self.farmer).status_code, 403
+        )
+        self.assertEqual(
+            client.get(
+                f"/admin/users/{self.farmer_id}/history/nope/photo",
+                headers=self.admin,
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            client.get(
+                f"/admin/users/999999/history/{self.item['id']}/photo",
+                headers=self.admin,
+            ).status_code,
+            404,
+        )
 
 
 if __name__ == "__main__":

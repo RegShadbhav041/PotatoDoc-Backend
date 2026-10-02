@@ -27,6 +27,16 @@ Notices + superadmin (additive; existing mobile contract above unchanged):
   POST   /admin/notices/{id}/images         superadmin multipart file -> notice {..., image_count} (max 6)
   GET    /admin/notices/{id}/images/{index} superadmin -> image bytes (any status; panel preview)
   DELETE /admin/notices/{id}/images/{index} superadmin -> 204
+  Support tickets (two-way farmer <-> superadmin chat):
+  POST   /tickets                 auth -> 201 ticket {…, messages:[…]} (subject + first message)
+  GET    /tickets                 auth -> {items:[…]} own tickets, newest activity first
+  GET    /tickets/{id}            auth -> ticket + messages (owner only; 404 otherwise)
+  POST   /tickets/{id}/messages   auth -> 201 ticket + messages (reopens a resolved ticket)
+  GET    /admin/tickets[?status=<open|resolved>] superadmin -> all tickets + farmer identity
+  GET    /admin/tickets/{id}      superadmin -> ticket + messages + farmer {…, photo}
+  POST   /admin/tickets/{id}/messages superadmin -> 201 reply (status unchanged)
+  PUT    /admin/tickets/{id}      superadmin -> {status: open|resolved}
+  GET    /admin/users[/{id}]      now carry the farmer's profile photo as a data-URI
   Web panel: GET /admin/ (static/admin); account seeded from
   POTATO_SUPERADMIN_CONTACT + POTATO_SUPERADMIN_PASSWORD (see db.py).
 """
@@ -48,6 +58,7 @@ from db import init_db
 from auth import router as auth_router
 from history import router as history_router
 from notices import router as notices_router
+from tickets import router as tickets_router
 from admin import router as admin_router
 
 # Repo root = this file's directory; override with POTATO_BASE_DIR if relocated.
@@ -179,6 +190,7 @@ init_db()
 app.include_router(auth_router)
 app.include_router(history_router)
 app.include_router(notices_router)
+app.include_router(tickets_router)
 app.include_router(admin_router)
 
 # Superadmin web panel — plain static HTML/JS, no build step. Guarded so the
