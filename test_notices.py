@@ -163,5 +163,60 @@ class ReadStateTest(unittest.TestCase):
         self.assertGreaterEqual(counted, 1)
 
 
+class NoticeImageFeedTest(unittest.TestCase):
+    def test_list_reports_zero_images_by_default(self):
+        with connect() as conn:
+            conn.execute("DELETE FROM notice_images")
+        seed_notice()
+        items = client.get("/notices").json()["items"]
+        self.assertTrue(items)
+        self.assertTrue(all(item["image_count"] == 0 for item in items))
+
+    def test_unknown_position_and_unknown_notice_are_404(self):
+        notice_id, _ = seed_notice()
+        self.assertEqual(client.get(f"/notices/{notice_id}/images/0").status_code, 404)
+        self.assertEqual(client.get("/notices/999999/images/0").status_code, 404)
+
+    def test_image_bytes_are_served_with_a_cache_header(self):
+        notice_id, _ = seed_notice()
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO notice_images (notice_id, data, mime) VALUES (?, ?, ?)",
+                (notice_id, b"jpeg-bytes", "image/jpeg"),
+            )
+        res = client.get(f"/notices/{notice_id}/images/0")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers["content-type"], "image/jpeg")
+        self.assertEqual(res.content, b"jpeg-bytes")
+        self.assertEqual(res.headers["cache-control"], "public, max-age=86400")
+
+    def test_positions_shift_down_when_an_earlier_image_is_deleted(self):
+        notice_id, _ = seed_notice()
+        with connect() as conn:
+            for payload in (b"first", b"second"):
+                conn.execute(
+                    "INSERT INTO notice_images (notice_id, data, mime) "
+                    "VALUES (?, ?, 'image/jpeg')",
+                    (notice_id, payload),
+                )
+            first_id = conn.execute(
+                "SELECT id FROM notice_images WHERE notice_id = ? ORDER BY id LIMIT 1",
+                (notice_id,),
+            ).fetchone()["id"]
+            conn.execute("DELETE FROM notice_images WHERE id = ?", (first_id,))
+        self.assertEqual(client.get(f"/notices/{notice_id}/images/0").content, b"second")
+        self.assertEqual(client.get(f"/notices/{notice_id}/images/1").status_code, 404)
+
+    def test_draft_images_are_never_public(self):
+        notice_id, _ = seed_notice(status="draft")
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO notice_images (notice_id, data, mime) "
+                "VALUES (?, ?, 'image/jpeg')",
+                (notice_id, b"secret"),
+            )
+        self.assertEqual(client.get(f"/notices/{notice_id}/images/0").status_code, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
