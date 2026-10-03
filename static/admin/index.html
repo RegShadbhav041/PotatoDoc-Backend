@@ -11,6 +11,7 @@
   <!-- Bump ?v= when style.css/app.js/logo.png change: Cloudflare caches .css/.js
        at the edge for 4h (Browser Cache TTL) while this HTML is never cached,
        so a stale stylesheet renders the page unstyled. -->
+  <link rel="icon" href="logo.png?v=20261004" type="image/png">
   <link rel="stylesheet" href="style.css?v=20261004">
 </head>
 <body>
@@ -134,7 +135,35 @@
     <main class="main">
       <header class="topbar">
         <h1 id="page-title">Dashboard</h1>
-        <a class="link" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+        <div class="topbar-right">
+          <div class="notif-wrap">
+            <button id="notif-btn" class="notif-btn" type="button"
+                    aria-label="Notifications" aria-expanded="false" aria-haspopup="dialog">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                <path fill="none" stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round" stroke-linejoin="round"
+                      d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path fill="none" stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round" stroke-linejoin="round"
+                      d="M13.7 21a2 2 0 0 1-3.4 0"/>
+              </svg>
+              <span id="notif-badge" class="notif-badge hidden">0</span>
+            </button>
+            <div id="notif-panel" class="notif-panel hidden" role="dialog" aria-label="Notifications">
+              <div class="notif-head">
+                <b>Notifications</b>
+                <button type="button" id="notif-clear" class="link">Clear all</button>
+              </div>
+              <div id="notif-list" class="notif-list"><p class="muted">No alerts yet.</p></div>
+              <div id="notif-perm" class="notif-perm hidden">
+                <button type="button" id="notif-enable" class="btn btn-outline btn-block">
+                  Enable desktop alerts &amp; sound
+                </button>
+              </div>
+            </div>
+          </div>
+          <a class="link" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+        </div>
       </header>
 
       <!-- ---- Dashboard ---- -->

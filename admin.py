@@ -146,12 +146,12 @@ class StatusIn(BaseModel):
 
 @router.put("/users/{user_id}/status")
 def change_status(user_id: int, body: StatusIn, admin: dict = Depends(require_superadmin)):
-    """Ban / unban a farmer. Banning revokes every live session at once, and
-    banned tokens are rejected from then on (auth._resolve_session)."""
+    """Suspend / reinstate a farmer. Suspending revokes every live session at
+    once, and suspended tokens are rejected from then on (auth._resolve_session)."""
     if body.status not in ACCOUNT_STATUSES:
         raise HTTPException(422, "Unknown status.")
     if user_id == admin["id"]:
-        raise HTTPException(400, "You cannot ban your own account.")
+        raise HTTPException(400, "You cannot suspend your own account.")
     with connect() as conn:
         row = conn.execute(
             "SELECT id, role FROM users WHERE id = ?", (user_id,)
@@ -159,7 +159,7 @@ def change_status(user_id: int, body: StatusIn, admin: dict = Depends(require_su
         if row is None:
             raise HTTPException(404, "User not found.")
         if row["role"] == "superadmin":
-            raise HTTPException(400, "Superadmin accounts cannot be banned.")
+            raise HTTPException(400, "Superadmin accounts cannot be suspended.")
         conn.execute("UPDATE users SET status = ? WHERE id = ?", (body.status, user_id))
         if body.status == "banned":
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))

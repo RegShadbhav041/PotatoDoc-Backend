@@ -224,6 +224,8 @@
     renderUsers();
     renderNotices();
     renderTickets();
+    applyHash(); // restore #/… after a refresh so we don't fall back to Dashboard
+    startNotifPolling();
   }
 
   function signOut(callServer) {
@@ -235,8 +237,13 @@
     }
     state.token = "";
     state.user = null;
+    state.view = "dashboard";
+    stopNotifPolling();
+    notifUnread = 0;
+    renderNotifBadge();
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    history.replaceState(null, "", location.pathname + location.search);
     showLogin();
   }
 
@@ -285,7 +292,41 @@
     "user-detail": "Farmer Detail",
   };
 
-  function navigate(view) {
+  var VIEWS = ["dashboard", "users", "notices", "tickets", "models", "user-detail"];
+
+  function hashFor(view) {
+    if (view === "user-detail" && state.userDetailId != null) {
+      return "#/user-detail/" + state.userDetailId;
+    }
+    return "#/" + view;
+  }
+
+  /** Mirrors the active view into location.hash so a refresh keeps you here. */
+  function writeHash() {
+    var h = hashFor(state.view);
+    if (location.hash !== h) location.hash = h;
+  }
+
+  /** Applies location.hash to the UI. Runs on refresh and on back/forward. */
+  function applyHash() {
+    var raw = (location.hash || "").replace(/^#\/?/, "");
+    if (!raw) return;
+    var parts = raw.split("/");
+    var view = parts[0];
+    if (VIEWS.indexOf(view) < 0) return;
+    if (view === "user-detail") {
+      var id = parseInt(parts[1], 10);
+      if (!id) { if (state.view !== "users") navigate("users"); return; }
+      if (state.view === "user-detail" && state.userDetailId === id) return;
+      openUserDetail(id);
+      return;
+    }
+    if (state.view === view) return; // hash we just wrote ourselves
+    navigate(view);
+  }
+
+  function navigate(view, opts) {
+    opts = opts || {};
     state.view = view;
     $$(".nav-item").forEach(function (el) {
       el.classList.toggle("active", el.dataset.nav === view);
@@ -300,6 +341,7 @@
     if (view === "notices") renderNotices();
     if (view === "tickets") renderTickets();
     if (view === "models") renderModels();
+    if (!opts.fromHash) writeHash();
   }
 
   /* ---------------- dashboard ---------------- */
@@ -403,13 +445,13 @@
         var isSelf = state.user && u.id === state.user.id;
         var next = u.role === "superadmin" ? "user" : "superadmin";
         var label = u.role === "superadmin" ? "Make farmer" : "Make superadmin";
-        var banned = u.status === "banned";
-        var statusBadge = '<span class="badge badge-' + (banned ? "banned" : "active") + '">' +
-          (banned ? "banned" : "active") + "</span>";
+        var suspended = u.status === "banned"; // wire value is still "banned"
+        var statusBadge = '<span class="badge badge-' + (suspended ? "suspended" : "active") + '">' +
+          (suspended ? "suspended" : "active") + "</span>";
         var banBtn = (u.role !== "superadmin" && !isSelf)
           ? '<button class="btn btn-outline btn-sm" data-ban-id="' + u.id +
-            '" data-ban-next="' + (banned ? "active" : "banned") + '">' +
-            (banned ? "Unban" : "Ban") + "</button>"
+            '" data-ban-next="' + (suspended ? "active" : "banned") + '">' +
+            (suspended ? "Reinstate" : "Suspend") + "</button>"
           : "";
         return "<tr>" +
           "<td>" + avatarHtml(u.photo, u.name || u.contact) +
@@ -442,8 +484,8 @@
     }
   }
 
-  /** Ban / unban a farmer (PUT /admin/users/{id}/status). A ban revokes every
-   * live session server-side and blocks the token from then on. */
+  /** Suspend / reinstate a farmer (PUT /admin/users/{id}/status). Suspension
+   *  revokes every live session server-side and blocks the token from then on. */
   async function changeStatus(userId, status) {
     try {
       await api("/admin/users/" + userId + "/status", {
@@ -451,8 +493,8 @@
         body: { status: status },
       });
       toast(status === "banned"
-        ? "Farmer banned — signed out everywhere"
-        : "Farmer unbanned — they can sign in again");
+        ? "Farmer suspended — signed out everywhere"
+        : "Farmer reinstated — they can sign in again");
       renderUsers();
       if (state.userDetailId === userId) openUserDetail(userId);
     } catch (err) {
@@ -645,6 +687,8 @@
           uploadErr = imgErr;
         }
       }
+      // The next notices_published bump is our own doing — don't self-announce.
+      notifSelfPublish = payload.status === "published";
       resetComposer();
       renderNotices();
       renderOverview();
@@ -975,6 +1019,160 @@
     }
   }
 
+  /* ---------------- notifications ---------------- */
+
+  var NOTIF_KEY = "potatoDocAdminNotifs";
+  var NOTIF_POLL_MS = 20000;
+  var notifItems = [];
+  var notifSeen = null;
+  var notifUnread = 0;
+  var notifTimer = null;
+  var notifSelfPublish = false;
+  var notifChime = null;
+
+  function notifLoad() {
+    try { notifItems = JSON.parse(localStorage.getItem(NOTIF_KEY) || "[]"); }
+    catch (e) { notifItems = []; }
+  }
+
+  function notifSave() {
+    try { localStorage.setItem(NOTIF_KEY, JSON.stringify(notifItems.slice(0, 60))); }
+    catch (e) {}
+  }
+
+  function playChime() {
+    try {
+      if (!notifChime) {
+        notifChime = new Audio("chime.wav?v=20261004");
+        notifChime.volume = 0.7;
+      }
+      notifChime.currentTime = 0;
+      var p = notifChime.play();
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) {}
+  }
+
+  /** Desktop toast + chime. The OS toast is silent so we only hear our chime. */
+  function notifAlert(title, body) {
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(title, { body: body || "", tag: "potatodoc", silent: true });
+      } catch (e) {}
+    }
+    playChime();
+    notifUnread++;
+    renderNotifBadge();
+  }
+
+  function notifAdd(title, body, view) {
+    notifItems.unshift({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      title: title,
+      body: body || "",
+      view: view || "",
+      at: new Date().toISOString(),
+    });
+    notifItems = notifItems.slice(0, 60);
+    notifSave();
+    renderNotifList();
+    notifAlert(title, body);
+  }
+
+  function renderNotifBadge() {
+    var b = $("#notif-badge");
+    if (!b) return;
+    b.textContent = notifUnread > 99 ? "99+" : String(notifUnread);
+    b.classList.toggle("hidden", !notifUnread);
+  }
+
+  function timeAgo(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    var s = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    return Math.floor(s / 86400) + "d ago";
+  }
+
+  function renderNotifList() {
+    var list = $("#notif-list");
+    if (!list) return;
+    if (!notifItems.length) {
+      list.innerHTML = '<p class="muted">No alerts yet.</p>';
+      return;
+    }
+    list.innerHTML = notifItems.map(function (n) {
+      return '<button type="button" class="notif-item"' +
+        (n.view ? ' data-notif-view="' + esc(n.view) + '"' : "") + ">" +
+        "<b>" + esc(n.title) + "</b>" +
+        (n.body ? "<small>" + esc(n.body) + "</small>" : "") +
+        '<span class="notif-time">' + esc(timeAgo(n.at)) + "</span></button>";
+    }).join("");
+  }
+
+  function refreshNotifPerm() {
+    var row = $("#notif-perm");
+    if (!row) return;
+    var granted = "Notification" in window && Notification.permission === "granted";
+    row.classList.toggle("hidden", granted);
+  }
+
+  async function notifPoll() {
+    if (!state.token) return;
+    try {
+      var pair = await Promise.all([api("/admin/overview"), api("/admin/tickets")]);
+      var totals = (pair[0] || {}).totals || {};
+    var tickets = ((pair[1] || {}).items) || [];
+      var first = !notifSeen;
+      if (first) {
+        notifSeen = { tickets: {}, users: 0, history: 0, notices: 0 };
+        tickets.forEach(function (t) { notifSeen.tickets[t.id] = 1; });
+      }
+
+      tickets.forEach(function (t) {
+        if (notifSeen.tickets[t.id]) return;
+        notifSeen.tickets[t.id] = 1;
+        if (first) return;
+        var f = t.farmer || {};
+        notifAdd("New support ticket",
+          (t.subject || "No subject") + " — " + (f.name || f.contact || "Unknown"), "tickets");
+      });
+
+      if (first) {
+        // Anything open that arrived while you were away: one summary, not a storm.
+        var open = tickets.filter(function (t) { return t.status === "open"; }).length;
+        if (open) notifAdd("Open support tickets", open + " waiting for a reply", "tickets");
+      } else {
+        if ((totals.users || 0) > notifSeen.users) {
+          notifAdd("New farmer registered", "Farmer accounts: " + totals.users, "users");
+        }
+        if ((totals.history_items || 0) > notifSeen.history) {
+          notifAdd("Diagnosis recorded", "Total diagnoses: " + totals.history_items, "dashboard");
+        }
+        var pub = totals.notices_published || 0;
+        if (pub > notifSeen.notices && !notifSelfPublish) {
+          notifAdd("Notice published", "Farmers can now see it", "notices");
+        }
+        notifSelfPublish = false;
+      }
+
+      notifSeen.users = totals.users || 0;
+      notifSeen.history = totals.history_items || 0;
+      notifSeen.notices = totals.notices_published || 0;
+    } catch (e) { /* polling must never disturb the UI */ }
+  }
+
+  function startNotifPolling() {
+    stopNotifPolling();
+    notifPoll();
+    notifTimer = setInterval(notifPoll, NOTIF_POLL_MS);
+  }
+
+  function stopNotifPolling() {
+    if (notifTimer) { clearInterval(notifTimer); notifTimer = null; }
+  }
+
   /* ---------------- wiring ---------------- */
 
   function boot() {
@@ -1079,8 +1277,55 @@
       });
     });
 
+    // ---- notification bell ----
+    notifLoad();
+    renderNotifList();
+    renderNotifBadge();
+    refreshNotifPerm();
+    $("#notif-btn").addEventListener("click", function (e) {
+      e.stopPropagation();
+      var nowHidden = $("#notif-panel").classList.toggle("hidden");
+      this.setAttribute("aria-expanded", String(!nowHidden));
+      if (!nowHidden) { notifUnread = 0; renderNotifBadge(); }
+    });
+    document.addEventListener("click", function (e) {
+      var panel = $("#notif-panel");
+      if (!panel || panel.classList.contains("hidden")) return;
+      if (e.target.closest(".notif-wrap")) return;
+      panel.classList.add("hidden");
+      $("#notif-btn").setAttribute("aria-expanded", "false");
+    });
+    $("#notif-clear").addEventListener("click", function () {
+      notifItems = [];
+      notifUnread = 0;
+      notifSave();
+      renderNotifList();
+      renderNotifBadge();
+    });
+    $("#notif-list").addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-notif-view]");
+      if (!btn) return;
+      navigate(btn.dataset.notifView);
+      $("#notif-panel").classList.add("hidden");
+      $("#notif-btn").setAttribute("aria-expanded", "false");
+    });
+    $("#notif-enable").addEventListener("click", function () {
+      if (!("Notification" in window)) return;
+      var req = Notification.requestPermission();
+      var done = function () {
+        refreshNotifPerm();
+        if (Notification.permission === "granted") {
+          notifAlert("Desktop alerts are on", "You'll hear a chime on new tickets and activity.");
+        }
+      };
+      if (req && req.then) req.then(done).catch(function () {});
+      else setTimeout(done, 400);
+    });
+
     if (state.token && state.user) showApp();
     else showLogin();
+
+    window.addEventListener("hashchange", applyHash);
   }
 
   document.addEventListener("DOMContentLoaded", boot);

@@ -833,9 +833,9 @@ button.list-row:hover { background: #f9fafb; }
 }
 #tk-send { align-self: flex-end; }
 
-/* ---- account status (ban/unban) ---- */
+/* ---- account status (suspend/reinstate) ---- */
 .badge-active { background: var(--green-soft); border-color: var(--green-line); color: var(--green-dark); }
-.badge-banned { background: #fdecea; border-color: #f5c6c0; color: var(--danger); }
+.badge-suspended { background: #fdecea; border-color: #f5c6c0; color: var(--danger); }
 
 /* ---- diagnosis report modal ---- */
 .modal {
@@ -925,4 +925,69 @@ tr.row-link:hover { background: var(--green-soft); }
   .login-brand-head { flex-direction: column; gap: 10px; }
   .login-form-title { width: 100%; }
   .login-card { width: 100%; padding: 26px 20px 26px; }
+}
+
+/* ---------------- Notifications bell ---------------- */
+
+.topbar-right { display: flex; align-items: center; gap: 18px; }
+
+.notif-wrap { position: relative; }
+
+.notif-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; padding: 0;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--gray); cursor: pointer;
+}
+.notif-btn:hover { background: var(--pill); color: var(--ink); }
+.notif-btn[aria-expanded="true"] { background: var(--green-soft); border-color: var(--green-line); color: var(--green-dark); }
+
+.notif-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 17px; padding: 0 4px;
+  border-radius: 999px; background: var(--red); color: #fff;
+  font-size: 10px; font-weight: 800; line-height: 17px; text-align: center;
+}
+
+.notif-panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 60;
+  width: 326px; max-width: 84vw;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 34px rgba(16, 24, 40, 0.18);
+  overflow: hidden;
+}
+
+.notif-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 12px 14px;
+  border-bottom: 1px solid var(--line); font-size: 14px;
+}
+
+.notif-list { max-height: 304px; overflow-y: auto; }
+.notif-list p.muted { margin: 0; padding: 16px 14px; }
+
+.notif-item {
+  display: block; width: 100%; text-align: left;
+  padding: 11px 14px; border: 0; border-bottom: 1px solid var(--line);
+  background: none; cursor: pointer; font: inherit;
+}
+.notif-item:last-child { border-bottom: 0; }
+.notif-item:hover { background: var(--green-soft); }
+.notif-item b { display: block; font-size: 13.5px; color: var(--ink); }
+.notif-item small {
+  display: block; margin-top: 2px;
+  color: var(--gray); font-size: 12.5px; line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+.notif-time { display: block; margin-top: 4px; color: #9aa1ab; font-size: 11px; }
+
+.notif-perm { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--pill); }
+
+@media (max-width: 720px) {
+  .topbar { gap: 10px; }
+  .topbar-right { gap: 12px; }
+  .topbar .link { display: none; }
+  .notif-panel { position: fixed; top: 76px; right: 14px; left: 14px; width: auto; max-width: none; }
 }
