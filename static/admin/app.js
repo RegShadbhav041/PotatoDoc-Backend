@@ -7,6 +7,7 @@
 
   var TOKEN_KEY = "potatodocAdminToken";
   var USER_KEY = "potatodocAdminUser";
+  var REMEMBER_KEY = "potatodocAdminContact";
   var MAX_NOTICE_IMAGES = 6;
 
   var state = {
@@ -176,7 +177,40 @@
     $("#login-view").classList.remove("hidden");
     $("#login-error").classList.add("hidden");
     $("#login-password").value = "";
+    resetPasswordToggle();
+    var saved = localStorage.getItem(REMEMBER_KEY);
+    $("#login-contact").value = saved || "";
+    if (saved) $("#login-remember").checked = true;
     document.title = "PotatoDoc · Superadmin";
+  }
+
+  function resetPasswordToggle() {
+    var input = $("#login-password");
+    var eye = $("#login-eye");
+    if (!input || !eye) return;
+    input.type = "password";
+    eye.classList.remove("on");
+    eye.setAttribute("aria-pressed", "false");
+    eye.setAttribute("aria-label", "Show password");
+  }
+
+  function togglePasswordVisibility() {
+    var input = $("#login-password");
+    var eye = $("#login-eye");
+    if (!input || !eye) return;
+    var shown = input.type === "text";
+    input.type = shown ? "password" : "text";
+    eye.classList.toggle("on", !shown);
+    eye.setAttribute("aria-pressed", String(!shown));
+    eye.setAttribute("aria-label", shown ? "Show password" : "Hide password");
+    input.focus();
+  }
+
+  function rememberContact() {
+    var remember = $("#login-remember").checked;
+    var contact = $("#login-contact").value.trim();
+    if (remember && contact) localStorage.setItem(REMEMBER_KEY, contact);
+    else localStorage.removeItem(REMEMBER_KEY);
   }
 
   function showApp() {
@@ -228,6 +262,7 @@
       state.user = data.user;
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      rememberContact();
       showApp();
       toast("Signed in as " + (data.user.name || "superadmin"));
     } catch (err) {
@@ -235,7 +270,7 @@
       errBox.classList.remove("hidden");
     } finally {
       btn.disabled = false;
-      btn.textContent = "Sign in";
+      btn.textContent = "Login";
     }
   }
 
@@ -944,6 +979,15 @@
 
   function boot() {
     $("#login-form").addEventListener("submit", handleLogin);
+    $("#login-eye").addEventListener("click", togglePasswordVisibility);
+    $("#login-forgot").addEventListener("click", function (e) {
+      e.preventDefault();
+      toast("Password reset isn't self-serve. Ask the server admin to re-issue it.", true);
+    });
+    $("#login-remember").addEventListener("change", rememberContact);
+    $("#login-contact").addEventListener("input", function () {
+      if ($("#login-remember").checked) rememberContact();
+    });
     $("#signout-btn").addEventListener("click", function () { signOut(true); });
 
     $$("[data-nav]").forEach(function (el) {
