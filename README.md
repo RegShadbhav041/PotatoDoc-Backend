@@ -116,16 +116,16 @@ The suite creates and deletes its own `potatodoc.db`; no extra pip packages
 powershell -ExecutionPolicy Bypass -File start_backend.ps1
 ```
 
-Starts uvicorn on `:8000` + a Cloudflare quick tunnel and prints a
-`https://….trycloudflare.com` URL. Paste it into `..\PotatoDoc\mobile\.env`:
+Starts uvicorn on `:8000`. Public URL is FIXED via named tunnel:
 
 ```
-EXPO_PUBLIC_API_URL=https://<printed-url>
+EXPO_PUBLIC_API_URL=https://potatodoc.shadbhavregmi.com.np
 ```
 
-Requires `cloudflared` (`winget install cloudflare.cloudflared`). Constraints:
-the PC must stay on/awake, and **the URL changes on every restart** (quick
-tunnels are ephemeral — reprint the script output and update `.env`).
+Requires `cloudflared` connector running (`PotatoDoc` tunnel, Published application
+route `potatodoc.shadbhavregmi.com.np -> http://127.0.0.1:8000`). The PC must stay
+on/awake. Fallback to ephemeral quick tunnel: `start_backend.ps1 -Quick`
+(prints a `https://….trycloudflare.com` URL).
 
 ## Deploy (Google Cloud Run, free tier — needs a payment card on file)
 
