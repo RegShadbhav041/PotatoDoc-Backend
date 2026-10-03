@@ -143,18 +143,15 @@ def _migrate(conn):
 def _seed_superadmin():
     """Create/promote the superadmin account from POTATO_SUPERADMIN_* env vars.
 
+    DEV DEFAULT (explicitly requested): falls back to admin@potatodoc.app /
+    SuperAdmin#2026 when env vars are absent. WARNING: this password is in git
+    history — rotate to env-only before any public/production deploy.
     The contact/password pair is authoritative for that contact: the password is
-    (re)set whenever it no longer verifies, so a wiped Cloud Run database comes
-    back with a working superadmin on the next boot. Existing accounts are never
-    touched otherwise, and no other row is ever modified.
+    (re)set whenever it no longer verifies, so a wiped database comes
+    back with a working superadmin on the next boot.
     """
-    contact_raw = (os.environ.get("POTATO_SUPERADMIN_CONTACT") or "").strip()
-    password = os.environ.get("POTATO_SUPERADMIN_PASSWORD") or ""
-    if not contact_raw or not password:
-        if contact_raw or password:
-            print("[db] superadmin seed skipped: both POTATO_SUPERADMIN_CONTACT and "
-                  "POTATO_SUPERADMIN_PASSWORD must be set")
-        return
+    contact_raw = (os.environ.get("POTATO_SUPERADMIN_CONTACT") or "admin@potatodoc.app").strip()
+    password = os.environ.get("POTATO_SUPERADMIN_PASSWORD") or "SuperAdmin#2026"
 
     # Lazy import: auth.py imports db at module level.
     from auth import hash_password, normalize_contact, verify_password
