@@ -12,7 +12,7 @@
   <!-- ============ LOGIN ============ -->
   <div id="login-view" class="login-wrap">
     <div class="login-card">
-      <div class="login-mark">P</div>
+      <div class="login-mark"><img src="logo.png" alt=""></div>
       <h1 class="login-title">PotatoDoc</h1>
       <p class="login-sub">Superadmin console</p>
 
@@ -41,10 +41,10 @@
   <div id="app-view" class="app hidden">
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark">P</span>
+        <span class="brand-logo"><img src="logo.png" alt=""></span>
         <div>
           <div class="brand-name">PotatoDoc</div>
-          <div class="brand-sub">Superadmin</div>
+          <div class="brand-sub">Super admin</div>
         </div>
       </div>
 
@@ -60,7 +60,7 @@
 
       <div class="sidebar-foot">
         <div id="sidebar-user" class="sidebar-user"></div>
-        <button id="signout-btn" class="btn btn-ghost btn-block">Sign out</button>
+        <button id="signout-btn" class="btn btn-logout btn-block">Log Out</button>
       </div>
     </aside>
 
@@ -96,10 +96,10 @@
         </div>
         <div class="panel">
           <div class="panel-head">
-            <h2>Quick actions</h2>
+            <h2>Quick Actions</h2>
           </div>
           <div class="quick">
-            <button class="btn btn-primary" data-nav="notices">Write a notice</button>
+            <button class="btn btn-outline" data-nav="notices">Write a notice</button>
             <button class="btn btn-outline" data-nav="users">Manage farmers</button>
             <button class="btn btn-outline" id="refresh-stats">Refresh dashboard</button>
           </div>
@@ -140,24 +140,25 @@
       <!-- ---- User detail ---- -->
       <section id="view-user-detail" class="view hidden">
         <div class="panel">
-          <div class="panel-head">
-            <h2 id="ud-name">Farmer</h2>
-            <div class="filters">
-              <span id="ud-status"></span>
-              <button class="btn btn-outline btn-sm hidden" id="ud-ban">Ban farmer</button>
-              <button class="btn btn-outline btn-sm" id="ud-back">← Back to farmers</button>
+          <div class="ud-head">
+            <div class="ud-id">
+              <div class="ud-name-row">
+                <h2 id="ud-name">Farmer</h2>
+                <span id="ud-role" class="badge badge-green"></span>
+              </div>
+              <p id="ud-meta" class="muted"></p>
             </div>
+            <span id="ud-joined" class="chip"></span>
           </div>
-          <p id="ud-meta" class="muted"></p>
           <div id="ud-cards" class="stats"></div>
         </div>
         <div class="grid-2">
           <div class="panel">
-            <div class="panel-head"><h2>Class mix</h2></div>
+            <div class="panel-head"><h2>class mix</h2></div>
             <div id="ud-class-bars" class="bars"></div>
           </div>
           <div class="panel">
-            <div class="panel-head"><h2>Models used</h2></div>
+            <div class="panel-head"><h2>Model used</h2></div>
             <div id="ud-model-bars" class="bars"></div>
           </div>
         </div>
@@ -275,16 +276,18 @@
             </div>
           </div>
           <p id="tk-meta" class="muted"></p>
-          <div id="tk-messages" class="chat">
-            <p class="muted">Loading…</p>
-          </div>
-          <form id="tk-reply-form" autocomplete="off">
-            <div class="form-actions">
-              <textarea id="tk-reply" rows="2" placeholder="Write a reply…"></textarea>
-              <button type="submit" class="btn btn-primary" id="tk-send">Send</button>
+          <div class="thread-box">
+            <div id="tk-messages" class="chat">
+              <p class="muted">Loading…</p>
             </div>
-            <span id="tk-msg" class="form-msg"></span>
-          </form>
+            <form id="tk-reply-form" autocomplete="off">
+              <div class="form-actions">
+                <textarea id="tk-reply" rows="3" placeholder="Write a reply…"></textarea>
+                <button type="submit" class="btn btn-primary" id="tk-send">Send</button>
+              </div>
+              <span id="tk-msg" class="form-msg"></span>
+            </form>
+          </div>
         </div>
       </section>
 

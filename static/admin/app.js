@@ -53,6 +53,15 @@
     });
   }
 
+  function fmtDay(iso) {
+    if (!iso) return "";
+    var d = new Date(iso.replace(" ", "T") + (iso.indexOf("Z") === -1 && iso.indexOf("+") === -1 ? "Z" : ""));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, {
+      year: "numeric", month: "short", day: "numeric",
+    });
+  }
+
   /** fetch wrapper: attaches the bearer token, JSON in/out, 401 -> logout. */
   async function api(path, options) {
     var opts = options || {};
@@ -167,6 +176,7 @@
     $("#login-view").classList.remove("hidden");
     $("#login-error").classList.add("hidden");
     $("#login-password").value = "";
+    document.title = "PotatoDoc · Superadmin";
   }
 
   function showApp() {
@@ -175,6 +185,7 @@
     var u = state.user || {};
     $("#sidebar-user").innerHTML =
       esc(u.name || "Super Admin") + "<small>" + esc(u.contact || "") + "</small>";
+    document.title = TITLES[state.view] || "Dashboard";
     renderOverview();
     renderUsers();
     renderNotices();
@@ -236,7 +247,7 @@
     notices: "Notices",
     tickets: "Tickets",
     models: "Models",
-    "user-detail": "Farmer detail",
+    "user-detail": "Farmer Detail",
   };
 
   function navigate(view) {
@@ -248,6 +259,7 @@
     var target = $("#view-" + view);
     if (target) target.classList.remove("hidden");
     $("#page-title").textContent = TITLES[view] || "Dashboard";
+    document.title = TITLES[view] || "Dashboard";
     if (view === "dashboard") renderOverview();
     if (view === "users") renderUsers();
     if (view === "notices") renderNotices();
@@ -423,31 +435,18 @@
       var u = await api("/admin/users/" + userId);
       $("#ud-name").innerHTML =
         avatarHtml(u.photo, u.name || u.contact, true) + esc(u.name || u.contact);
-      $("#ud-meta").innerHTML = esc(u.contact) + " · " +
-        '<span class="badge badge-' + esc(u.role) + '">' + esc(u.role) + "</span>" +
-        " · joined " + esc(fmtDate(u.created_at));
-      var banned = u.status === "banned";
-      $("#ud-status").innerHTML =
-        '<span class="badge badge-' + (banned ? "banned" : "active") + '">' +
-        (banned ? "banned" : "active") + "</span>";
-      var banBtn = $("#ud-ban");
-      var isSelf = state.user && u.id === state.user.id;
-      if (u.role === "superadmin" || isSelf) {
-        banBtn.classList.add("hidden");
-      } else {
-        banBtn.classList.remove("hidden");
-        banBtn.textContent = banned ? "Unban farmer" : "Ban farmer";
-        banBtn.dataset.uid = String(u.id);
-        banBtn.dataset.next = banned ? "active" : "banned";
-      }
+      $("#ud-meta").textContent = u.contact || "";
+      $("#ud-role").textContent =
+        u.role === "superadmin" ? "Superadmin" : "User";
+      $("#ud-joined").textContent = "Joined " + (fmtDay(u.created_at) || "—");
       $("#ud-cards").innerHTML = [
         ["Diagnoses", u.history_count],
-        ["Sessions", u.session_count],
-        ["Notices read", u.notices_read],
-        ["Last session", fmtDate(u.last_session_at) || "—"],
-        ["Last diagnosis", fmtDate(u.last_diagnosis_at) || "—"],
+        ["sessions", u.session_count],
+        ["notice read", u.notices_read],
+        ["Last session", fmtDate(u.last_session_at) || "—", true],
+        ["Last Diagnosis", fmtDate(u.last_diagnosis_at) || "—", true],
       ].map(function (c) {
-        return '<div class="stat"><div class="stat-value">' + esc(c[1]) +
+        return '<div class="stat"><div class="stat-value' + (c[2] ? " small" : "") + '">' + esc(c[1]) +
           '</div><div class="stat-label">' + esc(c[0]) + "</div></div>";
       }).join("");
       renderBars($("#ud-class-bars"), u.class_distribution);
@@ -862,14 +861,19 @@
         "Taken " + (fmtDate(it.timestamp) || "—") +
         (it.created_at ? " · saved " + fmtDate(it.created_at) : "");
 
-      // Where: GPS tag captured at diagnosis time, if any.
-      var loc = it.location;
-      $("#rm-loc").innerHTML = loc && loc.latitude != null && loc.longitude != null
-        ? '<span class="badge badge-open">📍 ' + Number(loc.latitude).toFixed(5) +
-          ", " + Number(loc.longitude).toFixed(5) + "</span>" +
-          (loc.locality ? ' <span class="muted">' + esc(loc.locality) + "</span>" : "") +
-          (loc.accuracy_m != null ? ' <span class="muted">±' +
-            Math.round(loc.accuracy_m) + " m</span>" : "")
+      // Where: GPS tag captured at diagnosis time, if any. The app writes
+      // {lat, lon, accuracy, label}; a few legacy rows used
+      // {latitude, longitude, accuracy_m, locality} — accept both.
+      var loc = it.location || {};
+      var lat = loc.lat != null ? loc.lat : loc.latitude;
+      var lon = loc.lon != null ? loc.lon : loc.longitude;
+      var acc = loc.accuracy != null ? loc.accuracy : loc.accuracy_m;
+      var place = loc.label || loc.locality || "";
+      $("#rm-loc").innerHTML = lat != null && lon != null
+        ? '<span class="badge badge-open">📍 ' + Number(lat).toFixed(5) +
+          ", " + Number(lon).toFixed(5) + "</span>" +
+          (acc != null ? ' <span class="muted">±' + Math.round(acc) + " m</span>" : "") +
+          (place ? ' <span class="muted">' + esc(place) + "</span>" : "")
         : '<span class="muted">No location tag</span>';
 
       // Full probability breakdown, sorted high → low.
@@ -910,7 +914,9 @@
       } else {
         body.innerHTML = m.items.map(function (it) {
           return "<tr><td>" + esc(it.name) + "</td>" +
-            "<td>" + (it.available ? "✓ ready" : "✗ missing") + "</td>" +
+            "<td>" + (it.available
+              ? '<span class="ok">✓ ready</span>'
+              : '<span class="miss">✗ missing</span>') + "</td>" +
             "<td>" + esc(it.size_mb) + " MB</td>" +
             "<td>" + esc(fmtDate(it.modified_at) || "—") + "</td>" +
             "<td>" + (it.accuracy == null ? "—" : esc(it.accuracy)) + "</td>" +
@@ -973,7 +979,6 @@
       state.search = e.target.value;
       renderUsers();
     });
-    $("#ud-back").addEventListener("click", function () { navigate("users"); });
 
     $("#users-body").addEventListener("click", function (e) {
       var farmer = e.target.closest("[data-user]");
@@ -984,10 +989,6 @@
       if (btn) changeRole(Number(btn.dataset.roleId), btn.dataset.role);
     });
 
-    $("#ud-ban").addEventListener("click", function () {
-      var el = $("#ud-ban");
-      if (el.dataset.uid) changeStatus(Number(el.dataset.uid), el.dataset.next);
-    });
     $("#ud-history-body").addEventListener("click", function (e) {
       var row = e.target.closest("[data-hid]");
       if (row && state.userDetailId != null) {
