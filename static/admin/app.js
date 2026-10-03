@@ -1043,7 +1043,7 @@
   function playChime() {
     try {
       if (!notifChime) {
-        notifChime = new Audio("chime.wav?v=20261004");
+        notifChime = new Audio("chime.wav?v=20261004b");
         notifChime.volume = 0.7;
       }
       notifChime.currentTime = 0;
