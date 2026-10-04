@@ -4,8 +4,8 @@
 # (tunnel connector runs separately via cloudflared service; this script only starts uvicorn).
 # Old quick-tunnel mode (random trycloudflare.com) is kept with -Quick flag for fallback.
 
-$ErrorActionPreference = "Stop"
 param([switch]$Quick)
+$ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $stableUrl = "https://potatodoc.shadbhavregmi.com.np"
 $logDir = Join-Path $env:TEMP "potatodoc-backend"
